@@ -84,10 +84,10 @@ class TranscribeCommand : Callable<Int> {
     }
 
     log.info("Parsing SQL : $input (dialect=$dialect)")
-    val queries = sqlTableParser.parse(input.readText(), dialect)
-    log.info("${queries.size} requête(s) détectée(s)")
+    val tables = sqlTableParser.parse(input.readText(), dialect)
+    log.info("${tables.size} table(s) détectée(s)")
 
-    val structureDefinitions = structureDefinitionMapper.map(queries)
+    val structureDefinitions = structureDefinitionMapper.map(tables)
 
     if (structureDefinitions.isEmpty()) {
       log.error("Aucun StructureDefinition généré à partir de $input")
