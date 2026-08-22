@@ -4,6 +4,7 @@ import fr.aphp.sashimi.EXT_CHARACTERISTICS
 import fr.aphp.sashimi.parser.SqlColumn
 import fr.aphp.sashimi.parser.SqlForeignKey
 import fr.aphp.sashimi.parser.SqlTable
+import fr.aphp.sashimi.parser.SqlUniqueKey
 import jakarta.enterprise.context.ApplicationScoped
 import org.hl7.fhir.r4.model.BooleanType
 import org.hl7.fhir.r4.model.CodeType
@@ -91,31 +92,51 @@ class StructureDefinitionMapper {
     }
     sd.differential.addElement(rootEl)
 
-    // Un ElementDefinition par colonne
-    table.columns.forEach { column ->
-      sd.differential.addElement(buildElement(table, column, sdName))
+    // Un ElementDefinition par colonne, contexte pré-calculé en une passe
+    buildColumnContexts(table).forEach { context ->
+      sd.differential.addElement(buildElement(context, sdName))
     }
     return sd
   }
 
   // ─────────────────────────────────────────────────────────────────────────
 
-  private fun buildElement(table: SqlTable, column: SqlColumn, parentPath: String): ElementDefinition {
+  /** Tous les faits d'une colonne (cardinalité, PK, FK, unique) résolus en une seule passe sur [SqlTable]. */
+  private data class ColumnContext(
+    val column: SqlColumn,
+    val min: Int,
+    val max: String,
+    val isPrimaryKey: Boolean,
+    val foreignKey: SqlForeignKey?,
+    val uniqueKey: SqlUniqueKey?,
+  )
+
+  private fun buildColumnContexts(table: SqlTable): List<ColumnContext> =
+    table.columns.map { column ->
+      val forcedNotNull = column.name in table.notNullColumns
+      ColumnContext(
+        column       = column,
+        min          = if (forcedNotNull || !column.nullable) 1 else 0,
+        max          = "1",
+        isPrimaryKey = column.name in table.primaryKeyColumns,
+        foreignKey   = table.foreignKeys.firstOrNull { column.name in it.localColumns },
+        uniqueKey    = table.uniqueKeys.firstOrNull { column.name in it.columns },
+      )
+    }
+
+  private fun buildElement(context: ColumnContext, parentPath: String): ElementDefinition {
+    val column = context.column
     val elementPath = "$parentPath.${column.name.toCamelCase()}"
-    val fk = table.foreignKeys.firstOrNull { column.name in it.localColumns }
-    val uniqueKey = table.uniqueKeys.firstOrNull { column.name in it.columns }
-    val isPk = column.name in table.primaryKeyColumns
-    val forcedNotNull = column.name in table.notNullColumns
 
     return ElementDefinition().apply {
       id   = elementPath
       path = elementPath
-      min  = if (forcedNotNull || !column.nullable) 1 else 0
-      max  = "1"
+      min  = context.min
+      max  = context.max
 
       // ── Type : Reference vers la SD cible si FK, sinon type FHIR primitif ──
-      if (fk != null) {
-        addType(buildFkTypeRef(fk))
+      if (context.foreignKey != null) {
+        addType(buildFkTypeRef(context.foreignKey))
       } else {
         addType(TypeRefComponent().apply {
           code = sqlTypeToFhirType(column.sqlType)
@@ -135,21 +156,21 @@ class StructureDefinitionMapper {
         })
       }
 
-      if (isPk) {
+      if (context.isPrimaryKey) {
         addExtension(Extension().apply {
           url = EXT_IS_PK
           setValue(BooleanType("true"))
         })
       }
 
-      if (fk != null) {
-        addExtension(buildFkColumnsExtension(fk))
+      if (context.foreignKey != null) {
+        addExtension(buildFkColumnsExtension(context.foreignKey))
       }
 
-      if (uniqueKey != null) {
+      if (context.uniqueKey != null) {
         addExtension(Extension().apply {
           url = EXT_SQL_UNIQUE
-          setValue(StringType("${uniqueKey.name} [UNIQUE]"))
+          setValue(StringType("${context.uniqueKey.name} [UNIQUE]"))
         })
       }
     }
