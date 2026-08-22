@@ -9,6 +9,7 @@ import jakarta.inject.Inject
 import org.slf4j.LoggerFactory
 import picocli.CommandLine
 import java.io.File
+import java.util.concurrent.Callable
 
 @QuarkusMain
 class SashimiMain : QuarkusApplication {
@@ -30,7 +31,7 @@ class SashimiMain : QuarkusApplication {
 class SashimiCommand
 
 @CommandLine.Command(name = "transcribe", description = ["Transcribe a SQL DDL file into FHIR StructureDefinitions in FSH format."])
-class TranscribeCommand : Runnable {
+class TranscribeCommand : Callable<Int> {
 
   private val log = LoggerFactory.getLogger(TranscribeCommand::class.java)
 
@@ -76,18 +77,22 @@ class TranscribeCommand : Runnable {
   @Inject lateinit var structureDefinitionMapper: StructureDefinitionMapper
   @Inject lateinit var fshWriter: FshWriter           // ton writer existant
 
-  override fun run() {
+  override fun call(): Int {
     if (!input.exists()) {
       log.error("Fichier introuvable : $input")
-      return
+      return 1
     }
 
     log.info("Parsing SQL : $input (dialect=$dialect)")
     val queries = sqlTableParser.parse(input.readText(), dialect)
     log.info("${queries.size} requête(s) détectée(s)")
 
-
     val structureDefinitions = structureDefinitionMapper.map(queries)
+
+    if (structureDefinitions.isEmpty()) {
+      log.error("Aucun StructureDefinition généré à partir de $input")
+      return 1
+    }
 
     val outputDir = output.ifEmpty {
       input.absoluteFile.parentFile.absolutePath  // absoluteFile résout le chemin relatif d'abord
@@ -100,5 +105,7 @@ class TranscribeCommand : Runnable {
       File(outputFile).writeText(fsh)
       log.info("FSH généré : $outputFile")
     }
+
+    return 0
   }
 }
