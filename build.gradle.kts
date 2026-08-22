@@ -1,7 +1,7 @@
 
 plugins {
     kotlin("jvm") version "2.4.0"
-    id("io.quarkus") version "3.35.3"
+    id("io.quarkus") version "3.38.3"
 }
 
 group = "fr.aphp"
@@ -11,9 +11,9 @@ repositories {
     mavenCentral()
 }
 
-val quarkusVersion = "3.35.3"
-val hapiVersion = "8.10.0"
-val jooqVersion = "3.21.4"
+val quarkusVersion = "3.38.3"
+val hapiVersion = "8.10.1"
+val jooqVersion = "3.21.7"
 
 dependencies {
     // quarkus
