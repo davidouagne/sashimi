@@ -34,7 +34,7 @@ src/main/kotlin/fr/aphp/sashimi/
 
 # Utilisation
 java -jar build/libs/sashimi.jar \
-  --input=sample.sql \
+  --input=src/test/resources/fixtures/patient-record/input.sql \
   --output=output.fsh \
   --dialect=POSTGRES
 ```
@@ -71,6 +71,14 @@ Title: "Patient Record"
 ```bash
 ./gradlew test
 ```
+
+`PipelineFixtureTest` fait tourner le pipeline complet sur chaque cas de
+`src/test/resources/fixtures/<cas>/` (`input.sql` + `expected.fsh` de
+référence) et compare le FSH produit par égalité stricte. Ces fixtures
+sont aussi les exemples de référence du projet — voir
+`src/test/resources/fixtures/patient-record/` pour un cas simple, ou
+`os-kern-fall/` / `os-mup-messungen/` pour des schémas réels avec clés
+étrangères et contraintes CHECK.
 
 ## Prochaines étapes
 
