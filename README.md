@@ -1,12 +1,12 @@
 # Sashimi
 
-Outil CLI Kotlin/Spring Boot qui parse un fichier SQL DDL et génère des **Logical Models FSH** (FHIR Shorthand).
+Outil CLI Kotlin/Quarkus qui parse un fichier SQL DDL et génère des **Logical Models FSH** (FHIR Shorthand).
 
 ## Stack
 
 | Couche       | Librairie                                   |
 |--------------|---------------------------------------------|
-| CLI / Runner | Spring Boot `CommandLineRunner`             |
+| CLI / Runner | Quarkus (`QuarkusApplication` + Picocli)    |
 | Parsing SQL  | jOOQ `DSLContext.parser()`                  |
 | Modèle FHIR  | HAPI FHIR R4 `StructureDefinition`          |
 | Sortie       | FSH (FHIR Shorthand) sérialisé manuellement |
@@ -15,55 +15,76 @@ Outil CLI Kotlin/Spring Boot qui parse un fichier SQL DDL et génère des **Logi
 
 ```
 src/main/kotlin/fr/aphp/sashimi/
-├── SashimiApplication.kt             # Point d'entrée Spring Boot
-├── cli/
-│   └── Sql2FshRunner.kt              # CommandLineRunner – parsing des args
+├── SashimiMain.kt                    # Point d'entrée Quarkus + commandes Picocli (SashimiCommand, TranscribeCommand)
+├── FhirExtensions.kt                 # URLs d'extension FHIR partagées (EXT_CHARACTERISTICS)
 ├── parser/
+│   ├── SqlTable.kt                   # Modèle de domaine : SqlTable, SqlColumn, SqlForeignKey…
 │   └── SqlTableParser.kt             # jOOQ DDL parser → List<SqlTable>
 ├── mapper/
-│   └── StructureDefinitionMapper.kt  # SqlTable → StructureDefinition HAPI
+│   ├── StructureDefinitionMapper.kt  # SqlTable → StructureDefinition HAPI
+│   ├── InvariantText.kt              # Texte brut d'une condition CHECK → texte d'invariant FSH
+│   └── NamingConventions.kt          # snake_case → PascalCase/camelCase/kebab-case
 └── writer/
     └── FshWriter.kt                  # StructureDefinition → texte FSH
 ```
+
+Le glossaire du domaine (SQL Table, SQL Column, Logical Model, Invariant…) est dans `CONTEXT.md`.
 
 ## Build & Run
 
 ```bash
 # Build
-./gradlew bootJar
+./gradlew build
 
-# Utilisation
-java -jar build/libs/sashimi.jar \
-  --input=src/test/resources/fixtures/patient-record/input.sql \
-  --output=output.fsh \
-  --dialect=POSTGRES
+# Utilisation (transcribe est la sous-commande, -o est un DOSSIER de sortie
+# qui doit déjà exister)
+mkdir -p output
+java -jar build/sashimi-0.1.0-SNAPSHOT-runner.jar transcribe \
+  --input src/test/resources/fixtures/patient-record/input.sql \
+  --output output
 ```
 
-### Arguments
+`--dialect` change la casse des identifiants non quotés dans la sortie
+(ex. `POSTGRES` les replie en minuscules, `DEFAULT` en majuscules) — les
+fixtures de `src/test/resources/fixtures/` sont toutes générées sans
+`--dialect` (donc `DEFAULT`).
 
-| Argument    | Obligatoire | Défaut        | Description                                |
-|-------------|-------------|---------------|--------------------------------------------|
-| `--input`   | ✅           | —             | Chemin vers le fichier SQL DDL             |
-| `--output`  | ❌           | `<input>.fsh` | Fichier FSH de sortie                      |
-| `--dialect` | ❌           | `DEFAULT`     | Dialecte jOOQ : `POSTGRES`, `MYSQL`, `H2`… |
+### Arguments (sous-commande `transcribe`)
+
+| Argument        | Obligatoire | Défaut                            | Description                                |
+|------------------|-------------|-----------------------------------|---------------------------------------------|
+| `-i`, `--input`  | ✅           | —                                  | Fichier SQL DDL à transcrire (`CREATE TABLE`) |
+| `-o`, `--output` | ❌           | dossier du fichier d'entrée       | **Dossier** de sortie pour les `.fsh` générés (un par table) |
+| `--dialect`      | ❌           | `DEFAULT`                          | Dialecte jOOQ pour le parsing : `POSTGRES`, `MYSQL`, `DEFAULT` |
+
+Un fichier `StructureDefinition-<id>.fsh` est écrit par table trouvée dans le DDL.
 
 ## Exemple de sortie FSH
 
+D'après `src/test/resources/fixtures/patient-record/input.sql` :
+
 ```fsh
 Logical: PatientRecord
-Id: patientrecord
-Title: "Patient Record"
+Parent: Base
+Id: patient-record
+Title: "PATIENT_RECORD"
+Characteristics: #can-be-target
 
-* id 1..1 uuid "Clé primaire SQL"
-* ipp 1..1 string "IPP du patient"
+* id 1..1 uuid ""
+* id ^extension[+].url = "https://interop.aphp.fr/fhir/StructureDefinition/ext-sql-is-pk"
+* id ^extension[=].valueBoolean = true
+* ipp 1..1 string ""
 * ipp ^maxLength = 20
-* lastName 1..1 string "Nom du patient"
-* firstName 1..1 string "Prénom du patient"
-* birthDate 0..1 date "date de naissance"
-* gender 0..1 string "Genre"
-* active 1..1 boolean "enregistrement actif"
-* createdAt 1..1 dateTime "date de création de l'enregistrement"
-* updatedAt 0..1 dateTime "date de mise à jour de l'enregistrement"
+* lastName 1..1 string ""
+* lastName ^maxLength = 255
+* firstName 1..1 string ""
+* firstName ^maxLength = 255
+* birthDate 0..1 date ""
+* gender 0..1 string ""
+* gender ^maxLength = 10
+* active 1..1 boolean ""
+* createdAt 1..1 dateTime ""
+* updatedAt 0..1 dateTime ""
 ```
 
 ## Tests
