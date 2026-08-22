@@ -119,11 +119,7 @@ class StructureDefinitionMapper {
           key        = check.`$name`().last()?.toConstraintKey()
             ?: "chk-${sdName.lowercase()}"
           severity   = ElementDefinition.ConstraintSeverity.ERROR
-          human      = check.`$condition`()
-            .toString()
-            .normalizeWhitespace()
-            .normalizeParentheses()
-            .applySqlNamingConventions()
+          human      = InvariantText.render(check.`$condition`())
           expression = "true"
         })
       }
@@ -339,62 +335,6 @@ class StructureDefinitionMapper {
     }
 
   // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Remplace toute séquence de blancs (espaces, \t, \r, \n) par un espace simple
-   * et supprime les espaces en tête/queue.
-   */
-  private fun String.normalizeWhitespace() =
-    replace(Regex("""\s+"""), " ").trim()
-
-  private fun String.normalizeParentheses() =
-    replace(Regex("""\(\s+"""), "(")
-      .replace(Regex("""\s+\)"""), ")")
-
-
-  private val SQL_KEYWORDS = setOf("is", "not", "null", "or", "and", "in", "like", "between")
-
-  /**
-   * Convertit les identifiants SQL snake_case présents dans une expression
-   * en camelCase, sans toucher aux mots-clés SQL ni aux litéraux.
-   *
-   * Exemple :
-   *   "note IS NOT NULL OR start_date IS NOT NULL"
-   *   → "note IS NOT NULL OR startDate IS NOT NULL"
-   */
-  private fun String.applySqlNamingConventions() =
-    replace(Regex("""\b[a-zA-Z][a-zA-Z0-9_]*\b""")) { match ->
-      when {
-        match.value.lowercase() in SQL_KEYWORDS -> match.value.uppercase()                   // NOT, NULL, OR…
-        else                                    -> match.value.lowercase().toCamelCase()     // NOTE → note, START_DATE → startDate
-      }
-    }
-
-  // ── Segmentation ──────────────────────────────────────────────────────────
-
-  /** Découpe sur tout séparateur (_  .  -  espace) et met en minuscules. */
-  private fun String.toWords(): List<String> =
-    lowercase()
-      .split(Regex("[._\\-\\s]+"))
-      .filter { it.isNotBlank() }
-
-  // ── Conventions de nommage ────────────────────────────────────────────────
-
-  /** care_site → CareSite */
-  private fun String.toPascalCase() =
-    toWords().joinToString("") { it.replaceFirstChar { c -> c.uppercaseChar() } }
-
-  /** START_DATE → startDate, note → note */
-  private fun String.toCamelCase() =
-    toWords()
-      .mapIndexed { i, part ->
-        if (i == 0) part else part.replaceFirstChar { it.uppercaseChar() }
-      }
-      .joinToString("")
-
-  /** care_site → care-site */
-  private fun String.toKebabCase() =
-    toWords().joinToString("-")
 
   /** chk_note CHECK → chk-note-check  (clé FSH valide) */
   private fun String.toConstraintKey() =

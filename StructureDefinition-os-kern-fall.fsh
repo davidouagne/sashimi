@@ -386,37 +386,37 @@ Severity: #error
 
 
 Invariant: b-dt-date-1089066878
-Description: "trunc(umgemeldet, NULL) = umgemeldet"
+Description: "date_trunc('day', umgemeldet) = umgemeldet"
 Expression: "true"
 Severity: #error
 
 
 Invariant: b-dt-date-1327138343
-Description: "trunc(monatsbuchung, NULL) = monatsbuchung"
+Description: "date_trunc('day', monatsbuchung) = monatsbuchung"
 Expression: "true"
 Severity: #error
 
 
 Invariant: b-dt-date-1794704147
-Description: "trunc(arbeitsunfaehigBis, NULL) = arbeitsunfaehigBis"
+Description: "date_trunc('day', arbeitsunfaehigBis) = arbeitsunfaehigBis"
 Expression: "true"
 Severity: #error
 
 
 Invariant: b-dt-date-256052664
-Description: "trunc(einreisedatum, NULL) = einreisedatum"
+Description: "date_trunc('day', einreisedatum) = einreisedatum"
 Expression: "true"
 Severity: #error
 
 
 Invariant: b-dt-date-541975750
-Description: "trunc(accidentdate, NULL) = accidentdate"
+Description: "date_trunc('day', accidentdate) = accidentdate"
 Expression: "true"
 Severity: #error
 
 
 Invariant: b-dt-date-876830750
-Description: "trunc(wunschtermin, NULL) = wunschtermin"
+Description: "date_trunc('day', wunschtermin) = wunschtermin"
 Expression: "true"
 Severity: #error
 
@@ -428,13 +428,13 @@ Severity: #error
 
 
 Invariant: ch11-fall
-Description: "((neugeborenes = 'j' AND aufndat <= entldat) OR (neugeborenes = 'n' AND aufndat < entldat))"
+Description: "((neugeborenes = 'J' AND aufndat <= entldat) OR (neugeborenes = 'N' AND aufndat < entldat))"
 Expression: "true"
 Severity: #error
 
 
 Invariant: ch12-fall
-Description: "einreise = 'j'"
+Description: "einreise = 'J'"
 Expression: "true"
 Severity: #error
 
@@ -452,7 +452,7 @@ Severity: #error
 
 
 Invariant: ch18-fall
-Description: "termin IN ('b', 'u')"
+Description: "termin IN ('B', 'U')"
 Expression: "true"
 Severity: #error
 
@@ -464,7 +464,7 @@ Severity: #error
 
 
 Invariant: ch20-fall
-Description: "trunc(monatsbuchung, NULL) = monatsbuchung"
+Description: "date_trunc('month', monatsbuchung) = monatsbuchung"
 Expression: "true"
 Severity: #error
 
@@ -482,7 +482,7 @@ Severity: #error
 
 
 Invariant: ch3-fall
-Description: "(trunc(aufndat, NULL) = aufndat AND trunc(entldat, NULL) = entldat AND trunc(vorstAdat, NULL) = vorstAdat)"
+Description: "(date_trunc('minute', aufndat) = aufndat AND date_trunc('minute', entldat) = entldat AND date_trunc('minute', vorstAdat) = vorstAdat)"
 Expression: "true"
 Severity: #error
 
@@ -506,7 +506,7 @@ Severity: #error
 
 
 Invariant: ch9-fall
-Description: "neugeborenes IN ('j', 'n')"
+Description: "neugeborenes IN ('J', 'N')"
 Expression: "true"
 Severity: #error
 

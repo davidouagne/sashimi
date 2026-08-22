@@ -1,0 +1,59 @@
+package fr.aphp.sashimi.mapper
+
+import org.jooq.Condition
+import org.jooq.SQLDialect
+import org.jooq.impl.DSL
+
+/**
+ * Rend le texte humain d'un invariant FSH à partir d'une condition SQL CHECK.
+ *
+ * Rend explicitement via le dialecte POSTGRES plutôt que `Condition.toString()` :
+ * sous DEFAULT (et MYSQL), jOOQ restitue `TRUNC(x)` et `TRUNC(x, 'MM')` de façon
+ * identique (`trunc(x, null)`), perdant l'argument de format d'origine. Sous
+ * POSTGRES, jOOQ traduit fidèlement vers `date_trunc('day'|'month'|…, x)`,
+ * indépendamment du dialecte utilisé pour parser la table.
+ */
+internal object InvariantText {
+
+    private val SQL_KEYWORDS = setOf("is", "not", "null", "or", "and", "in", "like", "between")
+
+    private val TOKEN = Regex("""'(?:[^']|'')*'|\b[a-zA-Z][a-zA-Z0-9_]*\b""")
+
+    fun render(condition: Condition): String =
+        DSL.using(SQLDialect.POSTGRES)
+            .render(condition)
+            .normalizeWhitespace()
+            .normalizeParentheses()
+            .applySqlNamingConventions()
+
+    private fun String.normalizeWhitespace() =
+        replace(Regex("""\s+"""), " ").trim()
+
+    private fun String.normalizeParentheses() =
+        replace(Regex("""\(\s+"""), "(")
+            .replace(Regex("""\s+\)"""), ")")
+
+    /**
+     * Convertit les identifiants SQL snake_case en camelCase, sans toucher
+     * aux mots-clés SQL, aux littéraux entre quotes (ex. 'J', 'B'), ni aux
+     * noms de fonction SQL suivis d'une parenthèse (ex. date_trunc(...)).
+     */
+    private fun String.applySqlNamingConventions(): String {
+        val source = this
+        return TOKEN.replace(source) { match ->
+            val token = match.value
+            when {
+                token.startsWith("'")                        -> token
+                token.lowercase() in SQL_KEYWORDS            -> token.uppercase()
+                isFollowedByOpenParen(source, match.range.last) -> token.lowercase()
+                else                                          -> token.lowercase().toCamelCase()
+            }
+        }
+    }
+
+    private fun isFollowedByOpenParen(source: String, lastMatchedIndex: Int): Boolean {
+        var i = lastMatchedIndex + 1
+        while (i < source.length && source[i].isWhitespace()) i++
+        return i < source.length && source[i] == '('
+    }
+}
