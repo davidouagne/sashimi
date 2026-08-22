@@ -4,15 +4,13 @@ import jakarta.enterprise.context.ApplicationScoped
 import org.hl7.fhir.r4.model.*
 
 /**
- * Sérialise n'importe quelle [StructureDefinition] en syntaxe FSH (FHIR Shorthand).
+ * Sérialise un [StructureDefinition] Logical (kind=LOGICAL, derivation=SPECIALIZATION)
+ * en syntaxe FSH (FHIR Shorthand) — la seule forme produite par [fr.aphp.sashimi.mapper.StructureDefinitionMapper].
  *
  * Supporte :
- *  - Logical, Profile, Extension, Resource
- *  - Slicing + slices nommées
- *  - Bindings (required / extensible / preferred / example)
- *  - Fixed value et pattern (tous les types primitifs courants + Coding, CodeableConcept)
+ *  - Logical models
  *  - Invariants (root et element)
- *  - Flags : MS, ?!, SU, TU, N
+ *  - Flags : MS, ?!, SU
  *  - maxLength, comment, definition
  *  - Extensions SQL Sashimi
  *  - Extensions génériques simples et complexes (nested)
@@ -27,19 +25,6 @@ class FshWriter {
     const val EXT_CHARACTERISTICS = "http://hl7.org/fhir/StructureDefinition/structuredefinition-type-characteristics"
   }
 
-  private sealed class RenderMode {
-
-    /** Logical / Resource : définition complète de chaque élément */
-    data object Definition : RenderMode()
-
-    /**
-     * Profile / Extension : on n'émet que ce qui est contraint.
-     * Le type n'est émis que s'il est réellement restreint (Reference profilée,
-     * type narrow) ou si l'élément est un slice nommé.
-     */
-    data object Constraint : RenderMode()
-  }
-
   // Modèle de données pour un invariant collecté
   private data class FshInvariant(
     val key: String,
@@ -48,14 +33,6 @@ class FshWriter {
     val expression: String?,
     val description: String? = null,
   )
-
-  private data class SliceEntry(
-    val name: String,
-    val cardinality: String,
-    val flags: String?,
-  ) {
-    fun toContainsToken() = listOfNotNull(name, cardinality, flags).joinToString(" ")
-  }
 
   // ── Point d'entrée ────────────────────────────────────────────────────
 
@@ -75,12 +52,8 @@ class FshWriter {
   // ── StructureDefinition ───────────────────────────────────────────────
 
   private fun renderSd(sd: StructureDefinition): String {
-    val mode = renderModeFor(sd)
     // Buffer d'invariants collectés pendant le rendu du corps
     val invariants = mutableListOf<FshInvariant>()
-
-    // Évite d'émettre la clause contains plusieurs fois si le path apparaît N fois
-    val emittedContains = mutableSetOf<String>()
 
     // Pour un Logical, le path racine est sd.name (ex. "Encounter")
     // Pour un Profile ou Extension, c'est sd.type (ex. "Patient", "Observation")
@@ -92,9 +65,7 @@ class FshWriter {
     }
 
     val body = buildString {
-      // Keyword FSH selon le kind + derivation
-      val keyword = sdKeyword(sd)
-      appendLine("$keyword: ${sd.name}")
+      appendLine("Logical: ${sd.name}")
 
       sd.baseDefinition?.takeIf { it.isNotBlank() }
         ?.let { appendLine("Parent: $it") }
@@ -120,20 +91,6 @@ class FshWriter {
       val rootEl = allElements.firstOrNull()
       val elements = allElements.drop(1)
 
-      // Pour chaque path slicé → liste ordonnée des sliceNames
-      val sliceNamesByPath: Map<String, List<SliceEntry>> = elements
-        .filter { !it.sliceName.isNullOrBlank() }
-        .groupBy { it.path }
-        .mapValues { (_, els) ->
-          els.map { el ->
-            SliceEntry(
-              name        = el.sliceName!!,
-              cardinality = if (el.hasMin() || el.hasMax()) "${el.min}..${el.max ?: "*"}" else "0..*",
-              flags       = buildInlineFlags(el).takeIf { it.isNotBlank() },
-            )
-          }
-        }
-
       // Invariants du root → obeys sur le profil lui-même
       rootEl?.constraint.orEmpty().forEach { c ->
         invariants += c.toFshInvariant()
@@ -142,7 +99,7 @@ class FshWriter {
       appendLine()
 
       elements.forEach { el ->
-        append(renderElement(el, rootPath, mode, invariants, sliceNamesByPath, emittedContains))
+        append(renderElement(el, rootPath, invariants))
       }
 
       appendLine()
@@ -158,22 +115,6 @@ class FshWriter {
         append(invariantBlocks)
       }
     }
-  }
-
-  private fun renderModeFor(sd: StructureDefinition) = when (sd.derivation) {
-    StructureDefinition.TypeDerivationRule.SPECIALIZATION -> RenderMode.Definition
-    StructureDefinition.TypeDerivationRule.CONSTRAINT     -> RenderMode.Constraint
-    else                                                  -> RenderMode.Definition
-  }
-
-  // ── Keyword FSH ───────────────────────────────────────────────────────
-
-  private fun sdKeyword(sd: StructureDefinition): String = when {
-    sd.kind == StructureDefinition.StructureDefinitionKind.LOGICAL -> "Logical"
-    sd.type == "Extension" -> "Extension"
-    sd.derivation == StructureDefinition.TypeDerivationRule.CONSTRAINT -> "Profile"
-    sd.kind == StructureDefinition.StructureDefinitionKind.RESOURCE -> "Resource"
-    else -> "Profile"
   }
 
   // ── Invariants ────────────────────────────────────────────────────────
@@ -201,76 +142,22 @@ class FshWriter {
   private fun renderElement(
     el: ElementDefinition,
     rootPath: String,
-    mode: RenderMode,
-    invariants: MutableList<FshInvariant>,
-    sliceNamesByPath: Map<String, List<SliceEntry>>,
-    emittedContains: MutableSet<String>): String = buildString {
-    val rel = el.path.removePrefix("$rootPath.")
-    val isSlice  = !el.sliceName.isNullOrBlank()
-    // Substitution du chemin : identifier:INS → identifier[INS]
-    val fshPath = if (!el.sliceName.isNullOrBlank()) "$rel[${el.sliceName}]" else rel
+    invariants: MutableList<FshInvariant>): String = buildString {
+    val fshPath = el.path.removePrefix("$rootPath.")
 
-    // ── Ligne principale ──────────────────────────────────────────────────
+    // ── Ligne principale : cardinalité + type + flags + short ───────────
     val parts = mutableListOf("* $fshPath")
 
-    when (mode) {
-      RenderMode.Definition -> {
-        // Définition complète : cardinalité + type toujours émis
-        if (!isSlice && (el.hasMin() || el.hasMax())) parts += "${el.min}..${el.max ?: "*"}"
+    if (el.hasMin() || el.hasMax()) parts += "${el.min}..${el.max ?: "*"}"
 
-        val typeStr = buildTypeString(el)
-        if (typeStr.isNotBlank()) parts += typeStr
+    val typeStr = buildTypeString(el)
+    if (typeStr.isNotBlank()) parts += typeStr
 
-        if (!isSlice) {
-          val flags = buildInlineFlags(el)
-          if (flags.isNotBlank()) parts += flags
-        }
+    val flags = buildInlineFlags(el)
+    if (flags.isNotBlank()) parts += flags
 
-        parts += el.short?.takeIf { it.isNotBlank() }?.let { "\"${it.fsh()}\"" } ?: "\"\""
-        appendLine(parts.joinToString(" "))
-      }
-      RenderMode.Constraint -> {
-        // Contrainte : cardinalité seulement si présente dans le differential
-        if (!isSlice && (el.hasMin() || el.hasMax())) parts += "${el.min}..${el.max ?: "*"}"
-
-        if (!isSlice) {
-          // Flags toujours pertinents en mode contrainte
-          val flags = buildInlineFlags(el)
-          if (flags.isNotBlank()) parts += flags
-          appendLine(parts.joinToString(" "))
-        }
-
-        el.short?.takeIf { it.isNotBlank() }
-          ?.let { appendLine("* $fshPath ^short = ${it.fshQuoted()}") }
-      }
-    }
-
-    // ── Slicing : règles puis contains ───────────────────────────────────
-    el.slicing?.let { slicing ->
-      append(renderSlicing(slicing, fshPath))
-
-      if (el.path !in emittedContains) {
-        sliceNamesByPath[el.path]?.let { entries ->
-          val tokens = entries.joinToString(" and ") { it.toContainsToken() }
-          appendLine("* $fshPath contains $tokens")
-        }
-        emittedContains += el.path
-      }
-    }
-
-    // ── Binding ───────────────────────────────────────────────────────
-    el.binding?.takeIf { it.hasValueSet() }?.let { b ->
-      val strength = b.strength?.toCode() ?: "required"
-      appendLine("* $fshPath from ${b.valueSet} ($strength)")
-    }
-
-    // ── Fixed value ───────────────────────────────────────────────────
-    el.fixed?.let { appendLine("* $fshPath = ${renderValue(it)}") }
-
-    // ── Pattern ───────────────────────────────────────────────────────
-    el.pattern?.let {
-      appendLine("* $fshPath ^pattern${it.fhirType().capitalize()} = ${renderValue(it)}")
-    }
+    parts += el.short?.takeIf { it.isNotBlank() }?.let { "\"${it.fsh()}\"" } ?: "\"\""
+    appendLine(parts.joinToString(" "))
 
     // ── maxLength ─────────────────────────────────────────────────────
     el.maxLengthElement?.value?.takeIf { it > 0 }
@@ -278,7 +165,7 @@ class FshWriter {
 
     // ── Extensions ────────────────────────────────────────────────────
     el.extension.forEach { ext ->
-      append(renderExtension(ext, rel))
+      append(renderExtension(ext, fshPath))
     }
 
     // ── Métadonnées textuelles ────────────────────────────────────────
@@ -297,19 +184,6 @@ class FshWriter {
       appendLine("* $fshPath obeys ${c.key}")
     }
   }
-
-  /**
-   * Renvoie true si le type de l'élément apporte réellement une contrainte
-   * par rapport à la base : Reference avec profil cible, canonical profilé,
-   * ou type narrowé (liste de types plus courte / différente).
-   * Un type code seul ("string", "boolean"…) sans profil n'est pas une contrainte.
-   */
-  private fun isConstrainedType(el: ElementDefinition): Boolean =
-    el.type.any { t ->
-      t.profile.isNotEmpty() ||
-        t.targetProfile.isNotEmpty() ||
-        el.type.size > 1   // type[x] narrowé explicitement
-    }
 
   // ── Flags ─────────────────────────────────────────────────────────────
 
@@ -348,23 +222,6 @@ class FshWriter {
 
       else -> code
     }
-  }
-
-  // ── Slicing ───────────────────────────────────────────────────────────
-
-  private fun renderSlicing(
-    s: ElementDefinition.ElementDefinitionSlicingComponent,
-    rel: String,
-  ): String = buildString {
-    s.discriminator.forEachIndexed { i, d ->
-      val idx = if (i == 0) "[+]" else "[=]"
-      appendLine("* $rel ^slicing.discriminator$idx.type = #${d.type?.toCode()}")
-      appendLine("* $rel ^slicing.discriminator[=].path = \"${d.path}\"")
-    }
-    s.description?.takeIf { it.isNotBlank() }
-      ?.let { appendLine("* $rel ^slicing.description = \"${it.fsh()}\"") }
-    if (s.ordered) appendLine("* $rel ^slicing.ordered = true")
-    s.rules?.let { appendLine("* $rel ^slicing.rules = #${it.toCode()}") }
   }
 
   // ── Extensions ────────────────────────────────────────────────────────
