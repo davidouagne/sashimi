@@ -1,5 +1,6 @@
 package fr.aphp.sashimi.writer
 
+import fr.aphp.sashimi.EXT_CHARACTERISTICS
 import jakarta.enterprise.context.ApplicationScoped
 import org.hl7.fhir.r4.model.*
 
@@ -19,12 +20,6 @@ import org.hl7.fhir.r4.model.*
 @ApplicationScoped
 class FshWriter {
 
-  // ── Constantes SQL Sashimi ─────────────────────────────────────────────
-
-  companion object {
-    const val EXT_CHARACTERISTICS = "http://hl7.org/fhir/StructureDefinition/structuredefinition-type-characteristics"
-  }
-
   // Modèle de données pour un invariant collecté
   private data class FshInvariant(
     val key: String,
@@ -32,6 +27,12 @@ class FshWriter {
     val human: String?,
     val expression: String?,
     val description: String? = null,
+  )
+
+  // Résultat du rendu d'un élément : le texte FSH et les invariants qu'il porte
+  private data class ElementRender(
+    val text: String,
+    val invariants: List<FshInvariant>,
   )
 
   // ── Point d'entrée ────────────────────────────────────────────────────
@@ -93,7 +94,9 @@ class FshWriter {
       appendLine()
 
       elements.forEach { el ->
-        append(renderElement(el, rootPath, invariants))
+        val rendered = renderElement(el, rootPath)
+        append(rendered.text)
+        invariants += rendered.invariants
       }
 
       appendLine()
@@ -133,50 +136,53 @@ class FshWriter {
 
   // ── Élément ───────────────────────────────────────────────────────────
 
-  private fun renderElement(
-    el: ElementDefinition,
-    rootPath: String,
-    invariants: MutableList<FshInvariant>): String = buildString {
-    val fshPath = el.path.removePrefix("$rootPath.")
+  private fun renderElement(el: ElementDefinition, rootPath: String): ElementRender {
+    val invariants = mutableListOf<FshInvariant>()
 
-    // ── Ligne principale : cardinalité + type + flags + short ───────────
-    val parts = mutableListOf("* $fshPath")
+    val text = buildString {
+      val fshPath = el.path.removePrefix("$rootPath.")
 
-    if (el.hasMin() || el.hasMax()) parts += "${el.min}..${el.max ?: "*"}"
+      // ── Ligne principale : cardinalité + type + flags + short ─────────
+      val parts = mutableListOf("* $fshPath")
 
-    val typeStr = buildTypeString(el)
-    if (typeStr.isNotBlank()) parts += typeStr
+      if (el.hasMin() || el.hasMax()) parts += "${el.min}..${el.max ?: "*"}"
 
-    val flags = buildInlineFlags(el)
-    if (flags.isNotBlank()) parts += flags
+      val typeStr = buildTypeString(el)
+      if (typeStr.isNotBlank()) parts += typeStr
 
-    parts += el.short?.takeIf { it.isNotBlank() }?.let { "\"${it.fsh()}\"" } ?: "\"\""
-    appendLine(parts.joinToString(" "))
+      val flags = buildInlineFlags(el)
+      if (flags.isNotBlank()) parts += flags
 
-    // ── maxLength ─────────────────────────────────────────────────────
-    el.maxLengthElement?.value?.takeIf { it > 0 }
-      ?.let { appendLine("* $fshPath ^maxLength = $it") }
+      parts += el.short?.takeIf { it.isNotBlank() }?.let { "\"${it.fsh()}\"" } ?: "\"\""
+      appendLine(parts.joinToString(" "))
 
-    // ── Extensions ────────────────────────────────────────────────────
-    el.extension.forEach { ext ->
-      append(renderExtension(ext, fshPath))
+      // ── maxLength ───────────────────────────────────────────────────
+      el.maxLengthElement?.value?.takeIf { it > 0 }
+        ?.let { appendLine("* $fshPath ^maxLength = $it") }
+
+      // ── Extensions ──────────────────────────────────────────────────
+      el.extension.forEach { ext ->
+        append(renderExtension(ext, fshPath))
+      }
+
+      // ── Métadonnées textuelles ──────────────────────────────────────
+      el.definition?.takeIf { it.isNotBlank() && it != el.short }
+        ?.let { appendLine("* $fshPath ^definition = ${it.fshQuoted()}") }
+
+      el.comment?.takeIf { it.isNotBlank() }
+        ?.let { appendLine("* $fshPath ^comment = ${it.fshQuoted()}") }
+
+      el.requirements?.takeIf { it.isNotBlank() }
+        ?.let { appendLine("* $fshPath ^requirements = ${it.fshQuoted()}") }
+
+      // obeys inline + collecte
+      el.constraint.forEach { c ->
+        invariants += c.toFshInvariant()
+        appendLine("* $fshPath obeys ${c.key}")
+      }
     }
 
-    // ── Métadonnées textuelles ────────────────────────────────────────
-    el.definition?.takeIf { it.isNotBlank() && it != el.short }
-      ?.let { appendLine("* $fshPath ^definition = ${it.fshQuoted()}") }
-
-    el.comment?.takeIf { it.isNotBlank() }
-      ?.let { appendLine("* $fshPath ^comment = ${it.fshQuoted()}") }
-
-    el.requirements?.takeIf { it.isNotBlank() }
-      ?.let { appendLine("* $fshPath ^requirements = ${it.fshQuoted()}") }
-
-    // obeys inline + collecte
-    el.constraint.forEach { c ->
-      invariants += c.toFshInvariant()
-      appendLine("* $fshPath obeys ${c.key}")
-    }
+    return ElementRender(text, invariants)
   }
 
   // ── Flags ─────────────────────────────────────────────────────────────

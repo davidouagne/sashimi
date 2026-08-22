@@ -1,5 +1,6 @@
 package fr.aphp.sashimi.mapper
 
+import fr.aphp.sashimi.EXT_CHARACTERISTICS
 import jakarta.enterprise.context.ApplicationScoped
 import org.hl7.fhir.r4.model.BooleanType
 import org.hl7.fhir.r4.model.CodeType
@@ -40,7 +41,6 @@ class StructureDefinitionMapper {
 
   companion object {
     const val BASE_URL            = "https://interop.aphp.fr/fhir/StructureDefinition"
-    const val EXT_CHARACTERISTICS = "http://hl7.org/fhir/StructureDefinition/structuredefinition-type-characteristics"
     const val EXT_IS_PK           = "$BASE_URL/ext-sql-is-pk"
     const val EXT_FK_COLUMNS      = "$BASE_URL/ext-sql-fk-columns"
     const val EXT_SQL_UNIQUE      = "$BASE_URL/ext-sql-unique"
