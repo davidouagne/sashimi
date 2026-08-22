@@ -1,6 +1,9 @@
 package fr.aphp.sashimi.mapper
 
 import fr.aphp.sashimi.EXT_CHARACTERISTICS
+import fr.aphp.sashimi.parser.SqlColumn
+import fr.aphp.sashimi.parser.SqlForeignKey
+import fr.aphp.sashimi.parser.SqlTable
 import jakarta.enterprise.context.ApplicationScoped
 import org.hl7.fhir.r4.model.BooleanType
 import org.hl7.fhir.r4.model.CodeType
@@ -13,17 +16,10 @@ import org.hl7.fhir.r4.model.StringType
 import org.hl7.fhir.r4.model.StructureDefinition
 import org.hl7.fhir.r4.model.StructureDefinition.StructureDefinitionKind
 import org.hl7.fhir.r4.model.StructureDefinition.TypeDerivationRule
-import org.jooq.Query
-import org.jooq.Table
-import org.jooq.TableField
-import org.jooq.impl.QOM
-import org.jooq.impl.QOM.IsNotNull
 
 /**
- * Transforme tous les [QOM.CreateTable] d'un fichier DDL en [StructureDefinition] HAPI FHIR R4.
- *
- * Les `COMMENT ON` associés (table ou colonne) sont également consommés
- * pour alimenter [StructureDefinition.description] et [ElementDefinition.short].
+ * Transforme chaque [SqlTable] (déjà entièrement résolu par
+ * [fr.aphp.sashimi.parser.SqlTableParser]) en [StructureDefinition] HAPI FHIR R4.
  *
  * | Source DDL        | Cible FHIR                                                    |
  * |-------------------|---------------------------------------------------------------|
@@ -40,51 +36,21 @@ import org.jooq.impl.QOM.IsNotNull
 class StructureDefinitionMapper {
 
   companion object {
-    const val BASE_URL            = "https://interop.aphp.fr/fhir/StructureDefinition"
-    const val EXT_IS_PK           = "$BASE_URL/ext-sql-is-pk"
-    const val EXT_FK_COLUMNS      = "$BASE_URL/ext-sql-fk-columns"
-    const val EXT_SQL_UNIQUE      = "$BASE_URL/ext-sql-unique"
-    const val EXT_PRECISION       = "$BASE_URL/ext-sql-precision"
+    const val BASE_URL       = "https://interop.aphp.fr/fhir/StructureDefinition"
+    const val EXT_IS_PK      = "$BASE_URL/ext-sql-is-pk"
+    const val EXT_FK_COLUMNS = "$BASE_URL/ext-sql-fk-columns"
+    const val EXT_SQL_UNIQUE = "$BASE_URL/ext-sql-unique"
+    const val EXT_PRECISION  = "$BASE_URL/ext-sql-precision"
   }
 
-  fun map(queries: List<Query>): List<StructureDefinition> =
-    queries
-      .filterIsInstance<QOM.CreateTable>()
-      .map { mapCreateTable(it, queries.filterIsInstance<QOM.CommentOn>()) }
+  fun map(tables: List<SqlTable>): List<StructureDefinition> =
+    tables.map { mapTable(it) }
 
   // ─────────────────────────────────────────────────────────────────────────
 
-  private fun mapCreateTable(ct: QOM.CreateTable, comments: List<QOM.CommentOn>): StructureDefinition {
-    val table  = ct.`$table`()
-    val sdName = table.qualifiedName.unquotedName().toString().toPascalCase()
-    val sdId = table.qualifiedName.unquotedName().toString().toKebabCase()
-
-    val commentByColumn: Map<String, QOM.CommentOn?> = ct.`$tableElements`()
-      .filterIsInstance<TableField<*, *>>()
-      .associate { field -> field.name to getComment(table, field, comments) }
-
-    val pkFields: Set<String> = ct.`$tableElements`()
-      .filterIsInstance<QOM.PrimaryKey>()
-      .flatMap { pk -> pk.`$fields`().map { f -> f.name } }
-      .toSet()
-
-    val checkConstraints: List<QOM.Check> = ct.`$tableElements`()
-      .filterIsInstance<QOM.Check>()
-    val cardByColumn: Map<String, Pair<Int, String>> = ct.`$tableElements`()
-      .filterIsInstance<TableField<*, *>>()
-      .associate { field -> field.name to getCardinality(field, checkConstraints) }
-
-    val foreignKeys: List<QOM.ForeignKey> = ct.`$tableElements`()
-      .filterIsInstance<QOM.ForeignKey>()
-    val fkByColumn: Map<String, QOM.ForeignKey?> = ct.`$tableElements`()
-      .filterIsInstance<TableField<*, *>>()
-      .associate { field -> field.name to getForeignKey(field, foreignKeys) }
-
-    val uniqueKeys: List<QOM.UniqueKey> = ct.`$tableElements`()
-      .filterIsInstance<QOM.UniqueKey>()
-    val uniqueKeyByColumn: Map<String, QOM.UniqueKey?> = ct.`$tableElements`()
-      .filterIsInstance<TableField<*, *>>()
-      .associate { field -> field.name to getUniqueKey(field, uniqueKeys) }
+  private fun mapTable(table: SqlTable): StructureDefinition {
+    val sdName = table.name.toPascalCase()
+    val sdId = table.name.toKebabCase()
 
     // ── StructureDefinition ───────────────────────────────────────────────
     val sd = StructureDefinition().apply {
@@ -92,13 +58,13 @@ class StructureDefinitionMapper {
       baseDefinition = "Base"
       id             = sdId
       name           = sdName
-      title          = table.qualifiedName.unquotedName().toString()
+      title          = table.name
       status         = PublicationStatus.DRAFT
       kind           = StructureDefinitionKind.LOGICAL
       abstract       = false
       type           = sdName
       derivation     = TypeDerivationRule.SPECIALIZATION
-      description    = getComment(table, comments)?.`$comment`()?.comment?.takeIf { c -> c.isNotBlank() }
+      description    = table.comment
     }
 
     sd.addExtension(Extension().apply {
@@ -114,12 +80,11 @@ class StructureDefinitionMapper {
       max  = "*"
       addType(TypeRefComponent().apply { code = "Base" })
 
-      checkConstraints.forEach { check ->
+      table.checks.forEach { check ->
         addConstraint(ElementDefinition.ElementDefinitionConstraintComponent().apply {
-          key        = check.`$name`().last()?.toConstraintKey()
-            ?: "chk-${sdName.lowercase()}"
+          key        = check.name?.toConstraintKey() ?: "chk-${sdName.lowercase()}"
           severity   = ElementDefinition.ConstraintSeverity.ERROR
-          human      = InvariantText.render(check.`$condition`())
+          human      = InvariantText.normalize(check.conditionText)
           expression = "true"
         })
       }
@@ -127,63 +92,46 @@ class StructureDefinitionMapper {
     sd.differential.addElement(rootEl)
 
     // Un ElementDefinition par colonne
-    ct.`$tableElements`()
-      .filterIsInstance<TableField<*, *>>()
-      .forEach { field ->
-        sd.differential.addElement(
-          buildElement(
-            field       = field,
-            parentPath  = sdName,
-            cardinality = cardByColumn[field.name] ?: Pair(0, "1"),
-            comment     = commentByColumn[field.name],
-            isPk        = field.name in pkFields,
-            fk          = fkByColumn[field.name],
-            uniqueKey   = uniqueKeyByColumn[field.name]
-          )
-        )
-      }
+    table.columns.forEach { column ->
+      sd.differential.addElement(buildElement(table, column, sdName))
+    }
     return sd
   }
 
   // ─────────────────────────────────────────────────────────────────────────
 
-  private fun buildElement(
-    field: TableField<*, *>,
-    parentPath: String?,
-    cardinality: Pair<Int, String>,
-    comment: QOM.CommentOn?,
-    isPk: Boolean,
-    fk: QOM.ForeignKey?,
-    uniqueKey: QOM.UniqueKey?,
-  ): ElementDefinition {
-    val elementPath = "$parentPath.${field.unqualifiedName.unquotedName().toString().toCamelCase()}"
+  private fun buildElement(table: SqlTable, column: SqlColumn, parentPath: String): ElementDefinition {
+    val elementPath = "$parentPath.${column.name.toCamelCase()}"
+    val fk = table.foreignKeys.firstOrNull { column.name in it.localColumns }
+    val uniqueKey = table.uniqueKeys.firstOrNull { column.name in it.columns }
+    val isPk = column.name in table.primaryKeyColumns
+    val forcedNotNull = column.name in table.notNullColumns
 
     return ElementDefinition().apply {
       id   = elementPath
       path = elementPath
-      min  = cardinality.first
-      max  = cardinality.second
+      min  = if (forcedNotNull || !column.nullable) 1 else 0
+      max  = "1"
 
       // ── Type : Reference vers la SD cible si FK, sinon type FHIR primitif ──
       if (fk != null) {
         addType(buildFkTypeRef(fk))
       } else {
         addType(TypeRefComponent().apply {
-          code = sqlTypeToFhirType(field.dataType.typeName.uppercase())
+          code = sqlTypeToFhirType(column.sqlType)
         })
       }
 
-      comment?.`$comment`()?.comment?.takeIf { it.isNotBlank() }?.let { short = it }
+      column.comment?.let { short = it }
 
-      field.dataType.length().takeIf { it > 0 }?.let { len ->
+      column.length.takeIf { it > 0 }?.let { len ->
         maxLengthElement = IntegerType(len)
       }
 
-      field.dataType.precision().takeIf { it > 0 }?.let { precision ->
-        val scale = field.dataType.scale()
+      column.precision.takeIf { it > 0 }?.let { precision ->
         addExtension(Extension().apply {
           url = EXT_PRECISION
-          setValue(StringType("($precision${if (scale > 0) ",$scale" else ""})"))
+          setValue(StringType("($precision${if (column.scale > 0) ",${column.scale}" else ""})"))
         })
       }
 
@@ -210,94 +158,29 @@ class StructureDefinitionMapper {
   /**
    * Construit le [TypeRefComponent] Reference pointant vers la SD cible de la FK.
    *
-   * Exemple : FK vers `OS_KERN.PATIENT` → `Reference(https://…/OsKernPatient)`
+   * Exemple : FK vers `OS_KERN.PATIENT` → `Reference(OsKernPatient)`
    */
-  private fun buildFkTypeRef(fk: QOM.ForeignKey): TypeRefComponent {
-    val targetSdUrl = fk.`$referencesTable`().qualifiedName.unquotedName().toString().toPascalCase()
+  private fun buildFkTypeRef(fk: SqlForeignKey): TypeRefComponent {
+    val targetSdName = fk.targetTable.toPascalCase()
     return TypeRefComponent().apply {
       code = "Reference"
-      addTargetProfile(targetSdUrl)
+      addTargetProfile(targetSdName)
     }
   }
 
   /**
-   * Construit l'extension [EXT_FK_COLUMNS] avec deux sous-extensions :
-   *   - `targetColumn` : nom de la colonne cible dans la table référencée
-   *
-   * En cas de FK composite (rare, mais possible), une extension est créée
-   * par paire locale/cible.
+   * Construit l'extension [EXT_FK_COLUMNS] avec une sous-extension `targetColumn`
+   * par colonne cible (FK composite : une extension par paire locale/cible).
    */
-  private fun buildFkColumnsExtension(
-    fk: QOM.ForeignKey,
-  ): Extension {
-    // Retrouve la position de la colonne locale dans la liste des champs FK
-    val targetFields = fk.`$referencesFields`()
-
-    return Extension().apply {
+  private fun buildFkColumnsExtension(fk: SqlForeignKey): Extension =
+    Extension().apply {
       url = EXT_FK_COLUMNS
-      // sous-extension targetColumn
-      targetFields.forEach { field ->
+      fk.targetColumns.forEach { targetColumn ->
         addExtension(Extension().apply {
           url = "targetColumn"
-          setValue(StringType(field.unqualifiedName.unquotedName().toString().toCamelCase()))
+          setValue(StringType(targetColumn.toCamelCase()))
         })
       }
-    }
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-
-  private fun getCardinality(
-    field: TableField<*, *>,
-    constraints: List<QOM.Check>,
-  ): Pair<Int, String> {
-    val forcedNotNull = constraints
-      .map { it.`$condition`() }
-      .filterIsInstance<IsNotNull>()
-      .any { it.`$field`().name == field.name }
-
-    return if (forcedNotNull || !field.dataType.nullability().nullable()) {
-      Pair(1, "1")
-    } else {
-      Pair(0, "1")
-    }
-  }
-
-  private fun getForeignKey(
-    field: TableField<*, *>,
-    foreignKeys: List<QOM.ForeignKey>?,
-  ): QOM.ForeignKey? =
-    foreignKeys?.firstOrNull { fk ->
-      fk.`$fields`().any { fkCol -> fkCol.name == field.name }
-    }
-
-  private fun getUniqueKey(
-    field: TableField<*, *>,
-    uniqueKeys: List<QOM.UniqueKey>?,
-  ): QOM.UniqueKey? =
-    uniqueKeys?.firstOrNull { fk ->
-      fk.`$fields`().any { fkCol -> fkCol.name == field.name }
-    }
-
-  private fun getComment(
-    table: Table<*>,
-    comments: List<QOM.CommentOn>?,
-  ): QOM.CommentOn? =
-    comments?.firstOrNull { comment ->
-      comment.`$table`()?.let {
-        it.qualifiedName == table.qualifiedName
-      } == true
-    }
-
-  private fun getComment(
-    table: Table<*>,
-    field: TableField<*, *>,
-    comments: List<QOM.CommentOn>?,
-  ): QOM.CommentOn? =
-    comments?.firstOrNull { comment ->
-      comment.`$field`()?.let {
-        it.qualifiedName.toString() == "${table.qualifiedName}.${field.qualifiedName}"
-      } == true
     }
 
   // ─────────────────────────────────────────────────────────────────────────

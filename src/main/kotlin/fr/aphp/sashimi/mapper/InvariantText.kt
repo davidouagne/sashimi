@@ -1,17 +1,9 @@
 package fr.aphp.sashimi.mapper
 
-import org.jooq.Condition
-import org.jooq.SQLDialect
-import org.jooq.impl.DSL
-
 /**
- * Rend le texte humain d'un invariant FSH à partir d'une condition SQL CHECK.
- *
- * Rend explicitement via le dialecte POSTGRES plutôt que `Condition.toString()` :
- * sous DEFAULT (et MYSQL), jOOQ restitue `TRUNC(x)` et `TRUNC(x, 'MM')` de façon
- * identique (`trunc(x, null)`), perdant l'argument de format d'origine. Sous
- * POSTGRES, jOOQ traduit fidèlement vers `date_trunc('day'|'month'|…, x)`,
- * indépendamment du dialecte utilisé pour parser la table.
+ * Normalise le texte brut d'une condition SQL CHECK (déjà rendu dialecte-fidèle
+ * par [fr.aphp.sashimi.parser.SqlTableParser], voir [fr.aphp.sashimi.parser.SqlCheckConstraint.conditionText])
+ * en texte d'invariant FSH lisible.
  */
 internal object InvariantText {
 
@@ -19,11 +11,8 @@ internal object InvariantText {
 
     private val TOKEN = Regex("""'(?:[^']|'')*'|\b[a-zA-Z][a-zA-Z0-9_]*\b""")
 
-    private val postgres = DSL.using(SQLDialect.POSTGRES)
-
-    fun render(condition: Condition): String =
-        postgres
-            .render(condition)
+    fun normalize(rawConditionText: String): String =
+        rawConditionText
             .normalizeWhitespace()
             .normalizeParentheses()
             .applySqlNamingConventions()

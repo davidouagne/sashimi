@@ -28,11 +28,16 @@ class PipelineFixtureTest {
     private val fixturesDir = File("src/test/resources/fixtures")
 
     @TestFactory
-    fun `pipeline produces the expected FSH for each fixture`(): List<DynamicTest> =
-        fixturesDir.listFiles { f -> f.isDirectory }
-            .orEmpty()
+    fun `pipeline produces the expected FSH for each fixture`(): List<DynamicTest> {
+        val caseDirs = fixturesDir.listFiles { f -> f.isDirectory }
+        check(!caseDirs.isNullOrEmpty()) {
+            "Aucune fixture trouvée sous ${fixturesDir.absolutePath} (cwd=${File(".").absolutePath}) : " +
+                "le dossier est introuvable ou vide, pas juste sans résultat."
+        }
+        return caseDirs
             .sortedBy { it.name }
             .map { caseDir -> dynamicTest(caseDir.name) { assertFixture(caseDir) } }
+    }
 
     private fun assertFixture(caseDir: File) {
         val input = File(caseDir, "input.sql").readText()
