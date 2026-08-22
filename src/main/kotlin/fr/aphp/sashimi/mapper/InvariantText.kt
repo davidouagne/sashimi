@@ -19,8 +19,10 @@ internal object InvariantText {
 
     private val TOKEN = Regex("""'(?:[^']|'')*'|\b[a-zA-Z][a-zA-Z0-9_]*\b""")
 
+    private val postgres = DSL.using(SQLDialect.POSTGRES)
+
     fun render(condition: Condition): String =
-        DSL.using(SQLDialect.POSTGRES)
+        postgres
             .render(condition)
             .normalizeWhitespace()
             .normalizeParentheses()

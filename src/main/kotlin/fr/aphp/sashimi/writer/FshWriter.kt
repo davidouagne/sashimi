@@ -55,14 +55,8 @@ class FshWriter {
     // Buffer d'invariants collectés pendant le rendu du corps
     val invariants = mutableListOf<FshInvariant>()
 
-    // Pour un Logical, le path racine est sd.name (ex. "Encounter")
-    // Pour un Profile ou Extension, c'est sd.type (ex. "Patient", "Observation")
-    val rootPath = when {
-      sd.kind == StructureDefinition.StructureDefinitionKind.LOGICAL -> sd.name
-      else -> sd.type
-        ?: sd.baseDefinition?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
-        ?: sd.name
-    }
+    // Le path racine d'un Logical est toujours sd.name (ex. "Encounter")
+    val rootPath = sd.name
 
     val body = buildString {
       appendLine("Logical: ${sd.name}")
