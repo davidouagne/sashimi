@@ -77,11 +77,17 @@ class SqlTableParser {
             }
 
         val uniqueKeys: List<SqlUniqueKey> = elements.filterIsInstance<QOM.UniqueKey>()
-            .map { uk -> SqlUniqueKey(name = uk.name, columns = uk.`$fields`().map { it.name }) }
+            .map { uk ->
+                SqlUniqueKey(
+                    name = uk.name.takeIf { it.isNotBlank() },
+                    columns = uk.`$fields`().map { it.name },
+                )
+            }
 
         val checks: List<SqlCheckConstraint> = checkConstraints.map { check ->
             SqlCheckConstraint(
-                name = check.`$name`().last(),
+                // check.$name().last() renvoie "" (pas null) pour un CHECK anonyme
+                name = check.`$name`().last()?.takeIf { it.isNotBlank() },
                 conditionText = postgres.render(check.`$condition`()),
             )
         }

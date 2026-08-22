@@ -35,7 +35,7 @@ data class SqlForeignKey(
 )
 
 data class SqlUniqueKey(
-    val name: String,
+    val name: String?,
     val columns: List<String>,
 )
 

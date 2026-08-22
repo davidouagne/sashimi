@@ -81,9 +81,14 @@ class StructureDefinitionMapper {
       max  = "*"
       addType(TypeRefComponent().apply { code = "Base" })
 
+      var anonymousCheckIndex = 0
       table.checks.forEach { check ->
+        val key = check.name?.toConstraintKey() ?: run {
+          anonymousCheckIndex++
+          "chk-${sdName.lowercase()}-$anonymousCheckIndex"
+        }
         addConstraint(ElementDefinition.ElementDefinitionConstraintComponent().apply {
-          key        = check.name?.toConstraintKey() ?: "chk-${sdName.lowercase()}"
+          this.key   = key
           severity   = ElementDefinition.ConstraintSeverity.ERROR
           human      = InvariantText.normalize(check.conditionText)
           expression = "true"
@@ -170,11 +175,16 @@ class StructureDefinitionMapper {
       if (context.uniqueKey != null) {
         addExtension(Extension().apply {
           url = EXT_SQL_UNIQUE
-          setValue(StringType("${context.uniqueKey.name} [UNIQUE]"))
+          setValue(StringType("${uniqueKeyName(context.uniqueKey)} [UNIQUE]"))
         })
       }
     }
   }
+
+  /** Nom d'une UNIQUE (verbatim si nommée), ou repli basé sur ses colonnes si anonyme (ex. code -> uq-code). */
+  private fun uniqueKeyName(uniqueKey: SqlUniqueKey): String =
+    uniqueKey.name
+      ?: "uq-" + uniqueKey.columns.joinToString("-") { it.toKebabCase() }
 
   /**
    * Construit le [TypeRefComponent] Reference pointant vers la SD cible de la FK.

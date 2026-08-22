@@ -131,4 +131,27 @@ class SqlTableParserTest {
 
         assertEquals(1, tables.first().checks.size)
     }
+
+    @Test
+    fun `anonymous CHECK has a null name, not an empty string`() {
+        val tables = parser.parse("""
+            CREATE TABLE t (
+                a INT,
+                CHECK (a > 0)
+            );
+        """.trimIndent())
+
+        assertNull(tables.first().checks.single().name)
+    }
+
+    @Test
+    fun `anonymous UNIQUE has a null name, not an empty string`() {
+        val tables = parser.parse("""
+            CREATE TABLE t (
+                code VARCHAR(10) UNIQUE
+            );
+        """.trimIndent())
+
+        assertNull(tables.first().uniqueKeys.single().name)
+    }
 }
