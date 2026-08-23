@@ -61,10 +61,12 @@ class StructureDefinitionMapperTest {
     }
 
     @Test
-    fun `a three-way collision is caught, not just pairwise`() {
+    fun `a collision after two already-distinct keys is still caught`() {
+        // Deux clés distinctes traitées sans accroc avant la collision : vérifie que la détection
+        // n'est pas limitée à une paire adjacente, mais porte sur toutes les clés vues jusqu'ici.
         val table = tableWithChecks(
             SqlCheckConstraint(name = null, conditionText = "a > 0"),
-            SqlCheckConstraint(name = null, conditionText = "a > 0"),
+            SqlCheckConstraint(name = null, conditionText = "b > 0"),
             SqlCheckConstraint(name = null, conditionText = "a > 0"),
         )
 

@@ -58,6 +58,23 @@ class SashimiMainTest {
     }
 
     @Test
+    fun `returns non-zero exit code and logs cleanly when two CHECK constraints collide`(@TempDir tempDir: File) {
+        val collidingDdl = """
+            CREATE TABLE t (
+                a INT,
+                CHECK (a > 0),
+                CHECK (a > 0)
+            );
+        """.trimIndent()
+        val input = File(tempDir, "colliding.sql").apply { writeText(collidingDdl) }
+
+        val exitCode = newCommand(input).call()
+
+        assertNotEquals(0, exitCode)
+        assertFalse(File(tempDir, "StructureDefinition-t.fsh").exists())
+    }
+
+    @Test
     fun `writes to the explicit output directory when provided`(@TempDir tempDir: File) {
         val input = File(tempDir, "schema.sql").apply { writeText(simpleDdl) }
         val outputDir = File(tempDir, "out").apply { mkdirs() }
