@@ -106,13 +106,23 @@ class StructureDefinitionMapper {
 
   // ─────────────────────────────────────────────────────────────────────────
 
+  /**
+   * Une FK à laquelle participe une colonne locale donnée, avec la colonne cible qui lui
+   * correspond *positionnellement* (voir ticket #10 : `localColumns[i]` ↔ `targetColumns[i]`,
+   * pas le produit cartésien des deux listes).
+   */
+  private data class ColumnForeignKey(
+    val fk: SqlForeignKey,
+    val targetColumn: String,
+  )
+
   /** Tous les faits d'une colonne (cardinalité, PK, FK, unique) résolus en une seule passe sur [SqlTable]. */
   private data class ColumnContext(
     val column: SqlColumn,
     val min: Int,
     val max: String,
     val isPrimaryKey: Boolean,
-    val foreignKey: SqlForeignKey?,
+    val foreignKeys: List<ColumnForeignKey>,
     val uniqueKey: SqlUniqueKey?,
   )
 
@@ -124,7 +134,10 @@ class StructureDefinitionMapper {
         min          = if (forcedNotNull || !column.nullable) 1 else 0,
         max          = "1",
         isPrimaryKey = column.name in table.primaryKeyColumns,
-        foreignKey   = table.foreignKeys.firstOrNull { column.name in it.localColumns },
+        foreignKeys  = table.foreignKeys.mapNotNull { fk ->
+          val index = fk.localColumns.indexOf(column.name)
+          if (index < 0) null else ColumnForeignKey(fk, fk.targetColumns[index])
+        },
         uniqueKey    = table.uniqueKeys.firstOrNull { column.name in it.columns },
       )
     }
@@ -139,9 +152,10 @@ class StructureDefinitionMapper {
       min  = context.min
       max  = context.max
 
-      // ── Type : Reference vers la SD cible si FK, sinon type FHIR primitif ──
-      if (context.foreignKey != null) {
-        addType(buildFkTypeRef(context.foreignKey))
+      // ── Type : une Reference vers la SD cible par FK à laquelle la colonne participe,
+      //    sinon type FHIR primitif si la colonne n'est dans aucune FK ──
+      if (context.foreignKeys.isNotEmpty()) {
+        context.foreignKeys.forEach { columnFk -> addType(buildFkTypeRef(columnFk.fk)) }
       } else {
         addType(TypeRefComponent().apply {
           code = sqlTypeToFhirType(column.sqlType)
@@ -168,9 +182,7 @@ class StructureDefinitionMapper {
         })
       }
 
-      if (context.foreignKey != null) {
-        addExtension(buildFkColumnsExtension(context.foreignKey))
-      }
+      context.foreignKeys.forEach { columnFk -> addExtension(buildFkColumnsExtension(columnFk)) }
 
       if (context.uniqueKey != null) {
         addExtension(Extension().apply {
@@ -200,18 +212,17 @@ class StructureDefinitionMapper {
   }
 
   /**
-   * Construit l'extension [EXT_FK_COLUMNS] avec une sous-extension `targetColumn`
-   * par colonne cible (FK composite : une extension par paire locale/cible).
+   * Construit l'extension [EXT_FK_COLUMNS] pour une FK à laquelle participe la colonne locale :
+   * une seule sous-extension `targetColumn`, la colonne cible positionnellement correspondante
+   * (voir ticket #10 — pas le produit cartésien de toutes les colonnes cibles de la FK).
    */
-  private fun buildFkColumnsExtension(fk: SqlForeignKey): Extension =
+  private fun buildFkColumnsExtension(columnFk: ColumnForeignKey): Extension =
     Extension().apply {
       url = EXT_FK_COLUMNS
-      fk.targetColumns.forEach { targetColumn ->
-        addExtension(Extension().apply {
-          url = "targetColumn"
-          setValue(StringType(targetColumn.toCamelCase()))
-        })
-      }
+      addExtension(Extension().apply {
+        url = "targetColumn"
+        setValue(StringType(columnFk.targetColumn.toCamelCase()))
+      })
     }
 
   // ─────────────────────────────────────────────────────────────────────────
