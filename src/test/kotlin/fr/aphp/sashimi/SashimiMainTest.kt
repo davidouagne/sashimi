@@ -95,6 +95,24 @@ class SashimiMainTest {
     }
 
     @Test
+    fun `returns non-zero exit code when two UNIQUE keys resolve to the same name`(@TempDir tempDir: File) {
+        val collidingDdl = """
+            CREATE TABLE t (
+                code   VARCHAR(10),
+                other  VARCHAR(10),
+                CONSTRAINT "uq-code" UNIQUE (other),
+                UNIQUE (code)
+            );
+        """.trimIndent()
+        val input = File(tempDir, "colliding-unique.sql").apply { writeText(collidingDdl) }
+
+        val exitCode = newCommand(input).call()
+
+        assertNotEquals(0, exitCode)
+        assertFalse(File(tempDir, "StructureDefinition-t.fsh").exists())
+    }
+
+    @Test
     fun `writes to the explicit output directory when provided`(@TempDir tempDir: File) {
         val input = File(tempDir, "schema.sql").apply { writeText(simpleDdl) }
         val outputDir = File(tempDir, "out").apply { mkdirs() }

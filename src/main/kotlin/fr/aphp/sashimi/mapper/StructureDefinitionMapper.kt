@@ -27,6 +27,9 @@ class DuplicateConstraintKeyException(message: String) : MappingValidationExcept
 /** Levée quand deux tables SQL d'un même run produisent le même identifiant de StructureDefinition. */
 class DuplicateStructureDefinitionIdException(message: String) : MappingValidationException(message)
 
+/** Levée quand une table SQL produit deux Unique Keys dont le nom (nommé ou de repli) résolu est identique. */
+class DuplicateUniqueKeyNameException(message: String) : MappingValidationException(message)
+
 /**
  * Transforme chaque [SqlTable] (déjà entièrement résolu par
  * [fr.aphp.sashimi.parser.SqlTableParser]) en [StructureDefinition] HAPI FHIR R4.
@@ -77,6 +80,20 @@ class StructureDefinitionMapper {
   private fun mapTable(table: SqlTable): StructureDefinition {
     val sdName = table.name.toPascalCase()
     val sdId = table.name.toKebabCase()
+
+    // Deux UNIQUE (nommées et/ou anonymes) ne doivent jamais résoudre au même nom : ce serait deux
+    // contraintes distinctes rendues indistinguables dans le FSH généré (même pattern qu'en #11
+    // pour les clés CHECK, appliqué ici aux Unique Keys — cf. ticket #15).
+    val seenUniqueKeyNames = mutableSetOf<String>()
+    table.uniqueKeys.forEach { uniqueKey ->
+      val name = uniqueKeyName(uniqueKey)
+      if (!seenUniqueKeyNames.add(name)) {
+        throw DuplicateUniqueKeyNameException(
+          "Table '${table.name}' : plusieurs contraintes UNIQUE produisent le même nom " +
+            "'$name' — renommez-les explicitement pour lever l'ambiguïté."
+        )
+      }
+    }
 
     // ── StructureDefinition ───────────────────────────────────────────────
     val sd = StructureDefinition().apply {
