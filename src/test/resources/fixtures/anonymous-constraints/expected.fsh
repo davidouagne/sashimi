@@ -9,6 +9,7 @@ Characteristics: #can-be-target
 
 * obeys chk-anonymousconstraints-1
 * obeys chk-anonymousconstraints-2
+* obeys chk-anonymousconstraints-3
 
 * id 1..1 uuid ""
 * id ^extension[+].url = "https://interop.aphp.fr/fhir/StructureDefinition/ext-sql-is-pk"
@@ -37,6 +38,12 @@ Severity: #error
 
 Invariant: chk-anonymousconstraints-2
 Description: "b > 0"
+Expression: "true"
+Severity: #error
+
+
+Invariant: chk-anonymousconstraints-3
+Description: "id IS NOT NULL"
 Expression: "true"
 Severity: #error
 

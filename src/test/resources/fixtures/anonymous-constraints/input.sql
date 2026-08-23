@@ -7,5 +7,6 @@ CREATE TABLE anonymous_constraints (
     UNIQUE (code),
     CHECK (a > 0),
     CHECK (b > 0),
+    CONSTRAINT "___" CHECK (id IS NOT NULL),
     UNIQUE (a, b)
 );

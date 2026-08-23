@@ -83,7 +83,7 @@ class StructureDefinitionMapper {
 
       var anonymousCheckIndex = 0
       table.checks.forEach { check ->
-        val key = check.name?.toConstraintKey() ?: run {
+        val key = check.name?.toConstraintKey()?.takeIf { it.isNotBlank() } ?: run {
           anonymousCheckIndex++
           "chk-${sdName.lowercase()}-$anonymousCheckIndex"
         }
