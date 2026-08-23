@@ -7,9 +7,9 @@ Id: anonymous-constraints
 Title: "ANONYMOUS_CONSTRAINTS"
 Characteristics: #can-be-target
 
-* obeys chk-anonymousconstraints-1
-* obeys chk-anonymousconstraints-2
-* obeys chk-anonymousconstraints-3
+* obeys chk-a-0
+* obeys chk-b-0
+* obeys chk-id-is-not-null
 
 * id 1..1 uuid ""
 * id ^extension[+].url = "https://interop.aphp.fr/fhir/StructureDefinition/ext-sql-is-pk"
@@ -30,19 +30,19 @@ Characteristics: #can-be-target
 * b ^extension[=].valueString = "uq-a-b [UNIQUE]"
 
 
-Invariant: chk-anonymousconstraints-1
+Invariant: chk-a-0
 Description: "a > 0"
 Expression: "true"
 Severity: #error
 
 
-Invariant: chk-anonymousconstraints-2
+Invariant: chk-b-0
 Description: "b > 0"
 Expression: "true"
 Severity: #error
 
 
-Invariant: chk-anonymousconstraints-3
+Invariant: chk-id-is-not-null
 Description: "id IS NOT NULL"
 Expression: "true"
 Severity: #error

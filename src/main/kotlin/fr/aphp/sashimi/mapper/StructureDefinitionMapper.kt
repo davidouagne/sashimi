@@ -83,14 +83,20 @@ class StructureDefinitionMapper {
 
       var anonymousCheckIndex = 0
       table.checks.forEach { check ->
-        val key = check.name?.toConstraintKey()?.takeIf { it.isNotBlank() } ?: run {
-          anonymousCheckIndex++
-          "chk-${sdName.lowercase()}-$anonymousCheckIndex"
-        }
+        val normalizedCondition = InvariantText.normalize(check.conditionText)
+        // Repli anonyme basé sur le contenu (stable face au réordonnancement de la DDL, cf. ticket #12) ;
+        // l'index positionnel ne sert plus qu'en tout dernier recours si la condition normalisée
+        // elle-même se réduit à rien (cf. ticket #13).
+        val key = check.name?.toConstraintKey()?.takeIf { it.isNotBlank() }
+          ?: normalizedCondition.toConstraintKey().takeIf { it.isNotBlank() }?.let { "chk-$it" }
+          ?: run {
+            anonymousCheckIndex++
+            "chk-${sdName.lowercase()}-$anonymousCheckIndex"
+          }
         addConstraint(ElementDefinition.ElementDefinitionConstraintComponent().apply {
           this.key   = key
           severity   = ElementDefinition.ConstraintSeverity.ERROR
-          human      = InvariantText.normalize(check.conditionText)
+          human      = normalizedCondition
           expression = "true"
         })
       }
