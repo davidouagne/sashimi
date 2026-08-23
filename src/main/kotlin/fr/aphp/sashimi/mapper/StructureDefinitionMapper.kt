@@ -126,8 +126,8 @@ class StructureDefinitionMapper {
     val seenUniqueKeyNames = mutableSetOf<String>()
     table.uniqueKeys.forEach { uniqueKey ->
       val name = uniqueKeyName(uniqueKey)
-      if (!seenUniqueKeyNames.add(name)) {
-        throw DuplicateUniqueKeyNameException(
+      seenUniqueKeyNames.addOrThrow(name) {
+        DuplicateUniqueKeyNameException(
           "Table '${table.name}' : plusieurs contraintes UNIQUE produisent le même nom " +
             "'$name' — renommez-les explicitement pour lever l'ambiguïté."
         )
@@ -178,8 +178,8 @@ class StructureDefinitionMapper {
 
         // Deux CHECK (nommées et/ou anonymes) ne doivent jamais produire la même clé FHIR :
         // ce serait deux invariants distincts silencieusement fusionnés en un seul (cf. ticket #11).
-        if (!seenCheckKeys.add(key)) {
-          throw DuplicateConstraintKeyException(
+        seenCheckKeys.addOrThrow(key) {
+          DuplicateConstraintKeyException(
             "Table '${table.name}' : plusieurs contraintes CHECK produisent la même clé FHIR " +
               "'$key' — renommez-les explicitement pour lever l'ambiguïté."
           )
@@ -364,4 +364,14 @@ class StructureDefinitionMapper {
     lowercase()
       .replace(Regex("[^a-z0-9]+"), "-")
       .trim('-')
+
+  /**
+   * Ajoute [key] à cet ensemble de clés déjà vues au sein d'une même table, ou lève l'exception
+   * de [exception] si elle y est déjà — pattern partagé par les clés CHECK (#11) et les noms
+   * UNIQUE (#15) au sein d'une table (cf. ticket #17 ; la collision de sdId entre tables, #14/#16,
+   * ne throw plus depuis le succès partiel du #16 et ne suit donc plus cette même forme).
+   */
+  private fun MutableSet<String>.addOrThrow(key: String, exception: () -> MappingValidationException) {
+    if (!add(key)) throw exception()
+  }
 }
