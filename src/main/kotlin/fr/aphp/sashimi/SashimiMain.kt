@@ -1,5 +1,6 @@
 package fr.aphp.sashimi
 
+import fr.aphp.sashimi.mapper.DuplicateConstraintKeyException
 import fr.aphp.sashimi.mapper.StructureDefinitionMapper
 import fr.aphp.sashimi.parser.SqlTableParser
 import fr.aphp.sashimi.writer.FshWriter
@@ -87,7 +88,12 @@ class TranscribeCommand : Callable<Int> {
     val tables = sqlTableParser.parse(input.readText(), dialect)
     log.info("${tables.size} table(s) détectée(s)")
 
-    val structureDefinitions = structureDefinitionMapper.map(tables)
+    val structureDefinitions = try {
+      structureDefinitionMapper.map(tables)
+    } catch (e: DuplicateConstraintKeyException) {
+      log.error(e.message ?: e.toString())
+      return 1
+    }
 
     if (structureDefinitions.isEmpty()) {
       log.error("Aucun StructureDefinition généré à partir de $input")

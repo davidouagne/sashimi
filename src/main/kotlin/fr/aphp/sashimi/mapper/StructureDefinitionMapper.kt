@@ -18,6 +18,9 @@ import org.hl7.fhir.r4.model.StructureDefinition
 import org.hl7.fhir.r4.model.StructureDefinition.StructureDefinitionKind
 import org.hl7.fhir.r4.model.StructureDefinition.TypeDerivationRule
 
+/** Levée quand une table SQL produit deux contraintes CHECK dont la clé FHIR résolue est identique. */
+class DuplicateConstraintKeyException(message: String) : IllegalStateException(message)
+
 /**
  * Transforme chaque [SqlTable] (déjà entièrement résolu par
  * [fr.aphp.sashimi.parser.SqlTableParser]) en [StructureDefinition] HAPI FHIR R4.
@@ -82,6 +85,7 @@ class StructureDefinitionMapper {
       addType(TypeRefComponent().apply { code = "Base" })
 
       var anonymousCheckIndex = 0
+      val seenCheckKeys = mutableSetOf<String>()
       table.checks.forEach { check ->
         val normalizedCondition = InvariantText.normalize(check.conditionText)
         // Repli anonyme basé sur le contenu (stable face au réordonnancement de la DDL, cf. ticket #12) ;
@@ -93,11 +97,21 @@ class StructureDefinitionMapper {
             anonymousCheckIndex++
             "chk-${sdName.lowercase()}-$anonymousCheckIndex"
           }
+
+        // Deux CHECK (nommées et/ou anonymes) ne doivent jamais produire la même clé FHIR :
+        // ce serait deux invariants distincts silencieusement fusionnés en un seul (cf. ticket #11).
+        if (!seenCheckKeys.add(key)) {
+          throw DuplicateConstraintKeyException(
+            "Table '${table.name}' : plusieurs contraintes CHECK produisent la même clé FHIR " +
+              "'$key' — renommez-les explicitement pour lever l'ambiguïté."
+          )
+        }
+
         addConstraint(ElementDefinition.ElementDefinitionConstraintComponent().apply {
-          this.key   = key
-          severity   = ElementDefinition.ConstraintSeverity.ERROR
-          human      = normalizedCondition
-          expression = "true"
+          this.key    = key
+          severity    = ElementDefinition.ConstraintSeverity.ERROR
+          human       = normalizedCondition
+          expression  = "true"
         })
       }
     }
