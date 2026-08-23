@@ -75,6 +75,26 @@ class SashimiMainTest {
     }
 
     @Test
+    fun `returns non-zero exit code and writes nothing when two tables normalize to the same sdId`(@TempDir tempDir: File) {
+        val collidingDdl = """
+            CREATE TABLE os.kern_fall (
+                id UUID NOT NULL,
+                CONSTRAINT pk_a PRIMARY KEY (id)
+            );
+            CREATE TABLE os_kern.fall (
+                id UUID NOT NULL,
+                CONSTRAINT pk_b PRIMARY KEY (id)
+            );
+        """.trimIndent()
+        val input = File(tempDir, "colliding-sdid.sql").apply { writeText(collidingDdl) }
+
+        val exitCode = newCommand(input).call()
+
+        assertNotEquals(0, exitCode)
+        assertFalse(File(tempDir, "StructureDefinition-os-kern-fall.fsh").exists())
+    }
+
+    @Test
     fun `writes to the explicit output directory when provided`(@TempDir tempDir: File) {
         val input = File(tempDir, "schema.sql").apply { writeText(simpleDdl) }
         val outputDir = File(tempDir, "out").apply { mkdirs() }

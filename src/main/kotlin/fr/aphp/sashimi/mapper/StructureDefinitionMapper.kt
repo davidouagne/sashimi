@@ -18,8 +18,14 @@ import org.hl7.fhir.r4.model.StructureDefinition
 import org.hl7.fhir.r4.model.StructureDefinition.StructureDefinitionKind
 import org.hl7.fhir.r4.model.StructureDefinition.TypeDerivationRule
 
+/** Base commune aux échecs de validation détectés pendant le mapping (voir #11, #14). */
+abstract class MappingValidationException(message: String) : IllegalStateException(message)
+
 /** Levée quand une table SQL produit deux contraintes CHECK dont la clé FHIR résolue est identique. */
-class DuplicateConstraintKeyException(message: String) : IllegalStateException(message)
+class DuplicateConstraintKeyException(message: String) : MappingValidationException(message)
+
+/** Levée quand deux tables SQL d'un même run produisent le même identifiant de StructureDefinition. */
+class DuplicateStructureDefinitionIdException(message: String) : MappingValidationException(message)
 
 /**
  * Transforme chaque [SqlTable] (déjà entièrement résolu par
@@ -47,8 +53,24 @@ class StructureDefinitionMapper {
     const val EXT_PRECISION  = "$BASE_URL/ext-sql-precision"
   }
 
-  fun map(tables: List<SqlTable>): List<StructureDefinition> =
-    tables.map { mapTable(it) }
+  fun map(tables: List<SqlTable>): List<StructureDefinition> {
+    val structureDefinitions = tables.map { mapTable(it) }
+
+    // Deux tables ne doivent jamais produire le même identifiant de StructureDefinition :
+    // le second fichier .fsh écraserait silencieusement le premier (cf. ticket #14).
+    val firstTableNameById = mutableMapOf<String, String>()
+    tables.zip(structureDefinitions).forEach { (table, sd) ->
+      val previousTableName = firstTableNameById.putIfAbsent(sd.id, table.name)
+      if (previousTableName != null) {
+        throw DuplicateStructureDefinitionIdException(
+          "Les tables '$previousTableName' et '${table.name}' produisent le même identifiant FHIR " +
+            "'${sd.id}' — renommez l'une d'elles pour lever l'ambiguïté."
+        )
+      }
+    }
+
+    return structureDefinitions
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
 

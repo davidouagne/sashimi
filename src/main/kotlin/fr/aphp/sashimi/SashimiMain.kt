@@ -1,6 +1,6 @@
 package fr.aphp.sashimi
 
-import fr.aphp.sashimi.mapper.DuplicateConstraintKeyException
+import fr.aphp.sashimi.mapper.MappingValidationException
 import fr.aphp.sashimi.mapper.StructureDefinitionMapper
 import fr.aphp.sashimi.parser.SqlTableParser
 import fr.aphp.sashimi.writer.FshWriter
@@ -90,7 +90,7 @@ class TranscribeCommand : Callable<Int> {
 
     val structureDefinitions = try {
       structureDefinitionMapper.map(tables)
-    } catch (e: DuplicateConstraintKeyException) {
+    } catch (e: MappingValidationException) {
       log.error(e.message ?: e.toString())
       return 1
     }

@@ -85,4 +85,35 @@ class StructureDefinitionMapperTest {
         assertEquals(listOf("chk-a-0", "chk-b-0"), constraints.map { it.key })
         assertEquals(listOf("a > 0", "b > 0"), constraints.map { it.human })
     }
+
+    private fun emptyTable(name: String) = SqlTable(
+        name = name,
+        comment = null,
+        columns = emptyList(),
+        primaryKeyColumns = emptySet(),
+        foreignKeys = emptyList(),
+        uniqueKeys = emptyList(),
+        checks = emptyList(),
+        notNullColumns = emptySet(),
+    )
+
+    @Test
+    fun `two differently-qualified table names normalizing to the same sdId collide`() {
+        // "." et "_" se normalisent tous deux vers "-" : ces deux noms qualifiés distincts
+        // produisent le même sdId "os-kern-fall" (ticket #14).
+        val tables = listOf(emptyTable("OS.KERN_FALL"), emptyTable("OS_KERN.FALL"))
+
+        val exception = assertThrows(DuplicateStructureDefinitionIdException::class.java) { mapper.map(tables) }
+        assertTrue(exception.message!!.contains("os-kern-fall"), "Le message doit nommer l'id en collision : ${exception.message}")
+        assertTrue(exception.message!!.contains("OS.KERN_FALL"), "Le message doit nommer les deux tables : ${exception.message}")
+        assertTrue(exception.message!!.contains("OS_KERN.FALL"), "Le message doit nommer les deux tables : ${exception.message}")
+    }
+
+    @Test
+    fun `tables with distinct sdId do not collide`() {
+        val tables = listOf(emptyTable("OS_KERN.FALL"), emptyTable("OS_KERN.PATIENT"))
+
+        val structureDefinitions = mapper.map(tables)
+        assertEquals(listOf("os-kern-fall", "os-kern-patient"), structureDefinitions.map { it.id })
+    }
 }
