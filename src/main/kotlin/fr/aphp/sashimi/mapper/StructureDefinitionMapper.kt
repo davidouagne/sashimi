@@ -30,6 +30,15 @@ class DuplicateStructureDefinitionIdException(message: String) : MappingValidati
 /** Levée quand une table SQL produit deux Unique Keys dont le nom (nommé ou de repli) résolu est identique. */
 class DuplicateUniqueKeyNameException(message: String) : MappingValidationException(message)
 
+/** Une table qui n'a pas pu être mappée : son [SqlTable.name] et la cause de l'échec (voir #16). */
+data class TableMappingFailure(val tableName: String, val exception: MappingValidationException)
+
+/**
+ * Résultat d'un [StructureDefinitionMapper.map] : succès partiel autorisé (#16) — une table en
+ * échec n'empêche pas les autres tables du même run d'être mappées et écrites.
+ */
+data class MappingResult(val successes: List<StructureDefinition>, val failures: List<TableMappingFailure>)
+
 /**
  * Transforme chaque [SqlTable] (déjà entièrement résolu par
  * [fr.aphp.sashimi.parser.SqlTableParser]) en [StructureDefinition] HAPI FHIR R4.
@@ -56,23 +65,53 @@ class StructureDefinitionMapper {
     const val EXT_PRECISION  = "$BASE_URL/ext-sql-precision"
   }
 
-  fun map(tables: List<SqlTable>): List<StructureDefinition> {
-    val structureDefinitions = tables.map { mapTable(it) }
-
-    // Deux tables ne doivent jamais produire le même identifiant de StructureDefinition :
-    // le second fichier .fsh écraserait silencieusement le premier (cf. ticket #14).
-    val firstTableNameById = mutableMapOf<String, String>()
-    tables.zip(structureDefinitions).forEach { (table, sd) ->
-      val previousTableName = firstTableNameById.putIfAbsent(sd.id, table.name)
-      if (previousTableName != null) {
-        throw DuplicateStructureDefinitionIdException(
-          "Les tables '$previousTableName' et '${table.name}' produisent le même identifiant FHIR " +
-            "'${sd.id}' — renommez l'une d'elles pour lever l'ambiguïté."
-        )
+  /**
+   * Mappe chaque table indépendamment : une table en échec (contrainte CHECK/UNIQUE ambiguë, ou
+   * collision de sdId avec une autre table) n'empêche pas les autres tables du run d'être mappées
+   * (succès partiel, cf. ticket #16). Une collision de sdId entre deux tables par ailleurs valides
+   * exclut les deux (ni l'une ni l'autre n'est plus "en faute" que l'autre), pas seulement l'une des deux.
+   */
+  fun map(tables: List<SqlTable>): MappingResult {
+    val failures = mutableListOf<TableMappingFailure>()
+    val mappedTables = mutableListOf<SqlTable>()
+    val mappedDefinitions = mutableListOf<StructureDefinition>()
+    tables.forEach { table ->
+      try {
+        mappedDefinitions += mapTable(table)
+        mappedTables += table
+      } catch (e: MappingValidationException) {
+        failures += TableMappingFailure(table.name, e)
       }
     }
 
-    return structureDefinitions
+    // Deux tables ne doivent jamais produire le même identifiant de StructureDefinition :
+    // le second fichier .fsh écraserait silencieusement le premier (cf. ticket #14).
+    val mappedPairs = mappedTables.zip(mappedDefinitions)
+    val firstTableNameById = mutableMapOf<String, String>()
+    val collisionExceptionByTableName = mutableMapOf<String, DuplicateStructureDefinitionIdException>()
+    mappedPairs.forEach { (table, sd) ->
+      val previousTableName = firstTableNameById.putIfAbsent(sd.id, table.name)
+      if (previousTableName != null) {
+        val exception = DuplicateStructureDefinitionIdException(
+          "Les tables '$previousTableName' et '${table.name}' produisent le même identifiant FHIR " +
+            "'${sd.id}' — renommez l'une d'elles pour lever l'ambiguïté."
+        )
+        // putIfAbsent (pas +=) : une même table peut apparaître comme "previous" pour plusieurs
+        // collisions successives (groupe à 3+ tables) ou coïncider avec elle-même (deux tables
+        // strictement homonymes) — un seul TableMappingFailure par nom de table, pas un doublon.
+        collisionExceptionByTableName.putIfAbsent(previousTableName, exception)
+        collisionExceptionByTableName.putIfAbsent(table.name, exception)
+      }
+    }
+    collisionExceptionByTableName.forEach { (tableName, exception) ->
+      failures += TableMappingFailure(tableName, exception)
+    }
+
+    val successes = mappedPairs.mapNotNull { (table, sd) ->
+      sd.takeIf { table.name !in collisionExceptionByTableName }
+    }
+
+    return MappingResult(successes, failures)
   }
 
   // ─────────────────────────────────────────────────────────────────────────

@@ -113,6 +113,30 @@ class SashimiMainTest {
     }
 
     @Test
+    fun `writes the tables that map cleanly and skips only the one that fails`(@TempDir tempDir: File) {
+        // Cf. ticket #16 : un batch multi-tables n'est plus tout-ou-rien. "bad" a deux CHECK en
+        // collision et est ignorée ; "good" ne dépend pas de "bad" et doit quand même être écrite.
+        val mixedDdl = """
+            CREATE TABLE bad (
+                a INT,
+                CHECK (a > 0),
+                CHECK (a > 0)
+            );
+            CREATE TABLE good (
+                id UUID NOT NULL,
+                CONSTRAINT pk_good PRIMARY KEY (id)
+            );
+        """.trimIndent()
+        val input = File(tempDir, "mixed.sql").apply { writeText(mixedDdl) }
+
+        val exitCode = newCommand(input).call()
+
+        assertNotEquals(0, exitCode, "Une table en échec doit teinter le code de sortie même si d'autres réussissent")
+        assertFalse(File(tempDir, "StructureDefinition-bad.fsh").exists())
+        assertTrue(File(tempDir, "StructureDefinition-good.fsh").exists())
+    }
+
+    @Test
     fun `writes to the explicit output directory when provided`(@TempDir tempDir: File) {
         val input = File(tempDir, "schema.sql").apply { writeText(simpleDdl) }
         val outputDir = File(tempDir, "out").apply { mkdirs() }

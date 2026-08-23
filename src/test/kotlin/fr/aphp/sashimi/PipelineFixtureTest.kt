@@ -43,8 +43,8 @@ class PipelineFixtureTest {
         val input = File(caseDir, "input.sql").readText()
         val expected = File(caseDir, "expected.fsh").readText()
 
-        val structureDefinitions = mapper.map(parser.parse(input))
-        val sd = structureDefinitions.find { it.id == caseDir.name }
+        val result = mapper.map(parser.parse(input))
+        val sd = result.successes.find { it.id == caseDir.name }
         assertNotNull(sd, "Aucun StructureDefinition d'id '${caseDir.name}' produit à partir de ${caseDir}/input.sql")
 
         val actual = writer.write(sd!!)

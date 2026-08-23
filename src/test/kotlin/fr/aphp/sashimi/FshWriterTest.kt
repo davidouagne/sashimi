@@ -19,7 +19,7 @@ class FshWriterTest {
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private fun fsh(ddl: String): String =
-        writer.write(mapper.map(parser.parse(ddl.trimIndent())).first())
+        writer.write(mapper.map(parser.parse(ddl.trimIndent())).successes.first())
 
     private fun assertContains(fsh: String, vararg snippets: String) =
         snippets.forEach { assertTrue(fsh.contains(it), "FSH devrait contenir : «$it»\n\nFSH produit :\n$fsh") }

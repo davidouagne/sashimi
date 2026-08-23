@@ -1,6 +1,5 @@
 package fr.aphp.sashimi
 
-import fr.aphp.sashimi.mapper.MappingValidationException
 import fr.aphp.sashimi.mapper.StructureDefinitionMapper
 import fr.aphp.sashimi.parser.SqlTableParser
 import fr.aphp.sashimi.writer.FshWriter
@@ -88,14 +87,13 @@ class TranscribeCommand : Callable<Int> {
     val tables = sqlTableParser.parse(input.readText(), dialect)
     log.info("${tables.size} table(s) détectée(s)")
 
-    val structureDefinitions = try {
-      structureDefinitionMapper.map(tables)
-    } catch (e: MappingValidationException) {
-      log.error(e.message ?: e.toString())
-      return 1
+    val result = structureDefinitionMapper.map(tables)
+
+    result.failures.forEach { failure ->
+      log.error("Table '${failure.tableName}' ignorée : ${failure.exception.message ?: failure.exception.toString()}")
     }
 
-    if (structureDefinitions.isEmpty()) {
+    if (result.successes.isEmpty()) {
       log.error("Aucun StructureDefinition généré à partir de $input")
       return 1
     }
@@ -104,7 +102,7 @@ class TranscribeCommand : Callable<Int> {
       input.absoluteFile.parentFile.absolutePath  // absoluteFile résout le chemin relatif d'abord
     }
 
-    structureDefinitions.forEach { sd ->
+    result.successes.forEach { sd ->
       val fsh = fshWriter.write(sd)
 
       val outputFile = "${outputDir + File.separator}StructureDefinition-${sd.id}.fsh"
@@ -112,6 +110,6 @@ class TranscribeCommand : Callable<Int> {
       log.info("FSH généré : $outputFile")
     }
 
-    return 0
+    return if (result.failures.isEmpty()) 0 else 1
   }
 }
