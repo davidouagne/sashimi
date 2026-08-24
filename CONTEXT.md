@@ -16,19 +16,23 @@ Sashimi translates a **SQL Table** (a `CREATE TABLE` in a DDL file) into a FHIR 
 
 - **Logical Model**: the FHIR StructureDefinition produced for one SQL Table (`kind = logical`, `derivation = specialization`).
 - **Invariant**: an `ElementDefinition.constraint` on the Logical Model's root element, rendered from a Check Constraint's condition text.
+- **Backbone Element**: an ElementDefinition whose FHIR type is `BackboneElement` rather than a primitive/complex FHIR type, itself carrying nested child ElementDefinitions. Wraps a SQL Column's own element whenever that column carries at least one structural fact (Primary Key membership, Foreign Key participation, Unique Key membership, numeric precision) — replaced the extension-based representation used before [wayfinder map #18](https://github.com/davidouagne/sashimi/issues/18) (see `docs/adr/0001-backbone-element-over-extensions-for-column-facts.md` and `docs/backbone-element-migration-spec.md`).
 
 ## Mapping rules (SQL → FHIR)
 
 | SQL-side                              | FHIR-side                                            |
 |----------------------------------------|-------------------------------------------------------|
 | SQL Table                              | Logical Model (StructureDefinition)                    |
-| SQL Column                             | ElementDefinition                                       |
+| SQL Column                             | ElementDefinition (Backbone Element if it carries ≥1 structural fact below, else unwrapped) |
 | SQL Column NOT NULL, or Not-Null-Forcing Column | ElementDefinition.min = 1                     |
-| Primary Key member                     | `ext-sql-is-pk` extension on the ElementDefinition       |
-| Foreign Key                            | ElementDefinition.type = Reference(target Logical Model) + `ext-sql-fk-columns` extension |
-| Unique Key member                      | `ext-sql-unique` extension on the ElementDefinition      |
+| SQL Column's own value, on a wrapped column | Backbone Element child `.value` — omitted for a Foreign Key column, whose `.fkN.reference` already carries the value |
+| Primary Key member                     | Backbone Element child `.isPrimaryKey: boolean` (present only if true) |
+| Foreign Key                            | Backbone Element child group `.fkN.reference: Reference(target Logical Model)` + `.fkN.targetColumn: string`, one group per distinct Foreign Key, always indexed from `fk1` even for a single FK |
+| Unique Key member                      | Backbone Element child `.uniqueKeyName: string` (the resolved constraint name) |
+| Numeric precision / scale              | Backbone Element children `.precision: integer` / `.scale: integer` |
 | Check Constraint                       | Invariant on the Logical Model's root element            |
 
 ## Notes
 
 - The SQL-side vocabulary (SQL Table, SQL Column, Primary/Foreign/Unique Key, Check Constraint, Not-Null-Forcing Column) is the seam between `SqlTableParser` and `StructureDefinitionMapper` (see [wayfinder map #1](https://github.com/davidouagne/sashimi/issues/1), ticket #3): `SqlTableParser.parse()` returns fully-resolved SQL Tables — comments, keys, and checks already attached — so `StructureDefinitionMapper` never depends on jOOQ's internal QOM types.
+- **Every Backbone Element child that represents a schema-constant fact — `.isPrimaryKey`, `.uniqueKeyName`, `.precision`, `.scale`, `.fkN.targetColumn` — is fixed to its resolved value**, the same way the extension-based form fixed its `value[x]`: `StructureDefinitionMapper` sets `ElementDefinition.fixed`, and `FshWriter` renders it as an FSH Assignment Rule (`* wertid.isPrimaryKey = true`, `* code.uniqueKeyName = "uq-code"`, `* zugId.fk1.targetColumn = "zugId"`). Only `.value` (the column's own scalar) and `.fkN.reference` (the actual target instance a row references) are declared with no fixed value — those genuinely vary per row. See `docs/adr/0001-backbone-element-over-extensions-for-column-facts.md`.
