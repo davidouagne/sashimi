@@ -1,8 +1,7 @@
-package fr.aphp.sashimi
+package fr.aphp.sashimi.writer
 
 import fr.aphp.sashimi.mapper.StructureDefinitionMapper
 import fr.aphp.sashimi.parser.SqlTableParser
-import fr.aphp.sashimi.writer.FshWriter
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.DynamicTest.dynamicTest
