@@ -11,16 +11,15 @@ import org.junit.jupiter.api.TestFactory
 import java.io.File
 
 /**
- * Fait tourner le pipeline complet (parse → map → write) sur chaque fixture
- * de `src/test/resources/fixtures/<cas>/` et compare le FSH produit au
- * fichier `expected.fsh` par égalité stricte du texte.
+ * Runs the full pipeline (parse → map → write) on each fixture under
+ * `src/test/resources/fixtures/<case>/` and compares the produced FSH to
+ * the `expected.fsh` file by strict text equality.
  *
- * Pour régénérer un `expected.fsh` après un changement intentionnel de
- * sortie : `./gradlew run` (ou le jar buildé) sur `input.sql`, relire le
- * diff, committer intentionnellement. Pas de régénération automatique.
+ * To regenerate an `expected.fsh` after an intentional output change:
+ * `./gradlew run` (or the built jar) on `input.sql`, review the diff,
+ * commit it intentionally. No automatic regeneration.
  */
 class PipelineFixtureTest {
-
     private val parser = SqlTableParser()
     private val mapper = StructureDefinitionMapper()
     private val writer = FshWriter()
@@ -31,8 +30,8 @@ class PipelineFixtureTest {
     fun `pipeline produces the expected FSH for each fixture`(): List<DynamicTest> {
         val caseDirs = fixturesDir.listFiles { f -> f.isDirectory }
         check(!caseDirs.isNullOrEmpty()) {
-            "Aucune fixture trouvée sous ${fixturesDir.absolutePath} (cwd=${File(".").absolutePath}) : " +
-                "le dossier est introuvable ou vide, pas juste sans résultat."
+            "No fixture found under ${fixturesDir.absolutePath} (cwd=${File(".").absolutePath}): " +
+                "the folder is missing or empty, not just without results."
         }
         return caseDirs
             .sortedBy { it.name }
@@ -45,9 +44,9 @@ class PipelineFixtureTest {
 
         val result = mapper.map(parser.parse(input))
         val sd = result.successes.find { it.id == caseDir.name }
-        assertNotNull(sd, "Aucun StructureDefinition d'id '${caseDir.name}' produit à partir de ${caseDir}/input.sql")
+        assertNotNull(sd, "No StructureDefinition with id '${caseDir.name}' produced from $caseDir/input.sql")
 
         val actual = writer.write(sd!!)
-        assertEquals(expected, actual, "Fixture '${caseDir.name}' : le FSH généré diverge de expected.fsh")
+        assertEquals(expected, actual, "Fixture '${caseDir.name}': the generated FSH diverges from expected.fsh")
     }
 }

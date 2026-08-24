@@ -5,310 +5,339 @@ import jakarta.enterprise.context.ApplicationScoped
 import org.hl7.fhir.r4.model.*
 
 /**
- * Sérialise un [StructureDefinition] Logical (kind=LOGICAL, derivation=SPECIALIZATION)
- * en syntaxe FSH (FHIR Shorthand) — la seule forme produite par [fr.aphp.sashimi.mapper.StructureDefinitionMapper].
+ * Serializes a Logical [StructureDefinition] (kind=LOGICAL, derivation=SPECIALIZATION)
+ * to FSH syntax (FHIR Shorthand) — the only form produced by [fr.aphp.sashimi.mapper.StructureDefinitionMapper].
  *
- * Supporte :
+ * Supports:
  *  - Logical models
- *  - Invariants (root et element)
- *  - Flags : MS, ?!, SU
+ *  - Invariants (root and element)
+ *  - Flags: MS, ?!, SU
  *  - maxLength, comment, definition
- *  - Extensions SQL Sashimi
- *  - Extensions génériques simples et complexes (nested)
- *  - Types multiples (value[x]), Reference, canonical avec profils multiples
+ *  - Sashimi SQL extensions
+ *  - Simple and complex (nested) generic extensions
+ *  - Multiple types (value[x]), Reference, canonical with multiple profiles
  */
 @ApplicationScoped
 class FshWriter {
-
-  // Modèle de données pour un invariant collecté
-  private data class FshInvariant(
-    val key: String,
-    val severity: String,
-    val human: String?,
-    val expression: String?,
-    val description: String? = null,
-  )
-
-  // Résultat du rendu d'un élément : le texte FSH et les invariants qu'il porte
-  private data class ElementRender(
-    val text: String,
-    val invariants: List<FshInvariant>,
-  )
-
-  // ── Point d'entrée ────────────────────────────────────────────────────
-
-  fun write(sd: StructureDefinition): String = buildString {
-    appendLine(HEADER)
-    append(renderSd(sd))
-  }
-
-  // ── Header ────────────────────────────────────────────────────────────
-
-  private val HEADER = """
-        // ============================================================
-        // Généré automatiquement par Sashimi — ne pas modifier manuellement
-        // ============================================================
-    """.trimIndent()
-
-  // ── StructureDefinition ───────────────────────────────────────────────
-
-  private fun renderSd(sd: StructureDefinition): String {
-    // Buffer d'invariants collectés pendant le rendu du corps
-    val invariants = mutableListOf<FshInvariant>()
-
-    // Le path racine d'un Logical est toujours sd.name (ex. "Encounter")
-    val rootPath = sd.name
-
-    val body = buildString {
-      appendLine("Logical: ${sd.name}")
-
-      sd.baseDefinition?.takeIf { it.isNotBlank() }
-        ?.let { appendLine("Parent: $it") }
-
-      sd.id?.takeIf { it.isNotBlank() }
-        ?.let { appendLine("Id: ${it.lowercase()}") }
-
-      sd.title?.takeIf { it.isNotBlank() }
-        ?.let { appendLine("Title: \"${it.fsh()}\"") }
-
-      sd.description?.takeIf { it.isNotBlank() }
-        ?.let { appendLine("Description: ${it.fshQuoted()}") }
-
-      // Characteristics (Logical models uniquement)
-      val chars = sd.extension.filter { it.url == EXT_CHARACTERISTICS }
-      if (chars.isNotEmpty()) {
-        appendLine("Characteristics: ${chars.joinToString(" ") { "#${it.value}" }}")
-      }
-
-      appendLine()
-
-      val allElements = sd.differential?.element.orEmpty()
-      val rootEl = allElements.firstOrNull()
-      val elements = allElements.drop(1)
-
-      // Invariants du root → obeys sur le profil lui-même
-      rootEl?.constraint.orEmpty().forEach { c ->
-        invariants += c.toFshInvariant()
-        appendLine("* obeys ${c.key}")
-      }
-      appendLine()
-
-      elements.forEach { el ->
-        val rendered = renderElement(el, rootPath)
-        append(rendered.text)
-        invariants += rendered.invariants
-      }
-
-      appendLine()
-    }
-
-    // Déclarations top-level émises APRÈS le bloc Profile/Logical
-    val invariantBlocks = invariants.joinToString("\n") { renderInvariantBlock(it) }
-
-    return buildString {
-      append(body)
-      if (invariantBlocks.isNotBlank()) {
-        appendLine()
-        append(invariantBlocks)
-      }
-    }
-  }
-
-  // ── Invariants ────────────────────────────────────────────────────────
-
-  // Conversion du modèle HAPI → modèle FSH neutre
-  private fun ElementDefinition.ElementDefinitionConstraintComponent.toFshInvariant() =
-    FshInvariant(
-      key        = key,
-      severity   = severity?.toCode() ?: "error",
-      human      = human?.takeIf { it.isNotBlank() },
-      expression = expression?.takeIf { it.isNotBlank() },
+    // Data model for a collected invariant
+    private data class FshInvariant(
+        val key: String,
+        val severity: String,
+        val human: String?,
+        val expression: String?,
+        val description: String? = null,
     )
 
-  // Rendu du bloc top-level
-  private fun renderInvariantBlock(inv: FshInvariant): String = buildString {
-    appendLine("Invariant: ${inv.key}")
-    inv.human?.let      { appendLine("Description: \"${it.fsh()}\"") }
-    inv.expression?.let { appendLine("Expression: \"${it.fsh()}\"") }
-    appendLine("Severity: #${inv.severity}")
-    appendLine()
-  }
+    // Result of rendering an element: its FSH text and the invariants it carries
+    private data class ElementRender(
+        val text: String,
+        val invariants: List<FshInvariant>,
+    )
 
-  // ── Élément ───────────────────────────────────────────────────────────
+    // ── Entry point ────────────────────────────────────────────────────
 
-  private fun renderElement(el: ElementDefinition, rootPath: String): ElementRender {
-    val invariants = mutableListOf<FshInvariant>()
+    fun write(sd: StructureDefinition): String =
+        buildString {
+            appendLine(header)
+            append(renderSd(sd))
+        }
 
-    val text = buildString {
-      val fshPath = el.path.removePrefix("$rootPath.")
+    // ── Header ────────────────────────────────────────────────────────────
 
-      // ── Ligne principale : cardinalité + type + flags + short ─────────
-      val parts = mutableListOf("* $fshPath")
+    private val header =
+        """
+        // ============================================================
+        // Auto-generated by Sashimi — do not edit manually
+        // ============================================================
+        """.trimIndent()
 
-      if (el.hasMin() || el.hasMax()) parts += "${el.min}..${el.max ?: "*"}"
+    // ── StructureDefinition ───────────────────────────────────────────────
 
-      val typeStr = buildTypeString(el)
-      if (typeStr.isNotBlank()) parts += typeStr
+    private fun renderSd(sd: StructureDefinition): String {
+        // Buffer of invariants collected while rendering the body
+        val invariants = mutableListOf<FshInvariant>()
 
-      val flags = buildInlineFlags(el)
-      if (flags.isNotBlank()) parts += flags
+        // A Logical's root path is always sd.name (e.g. "Encounter")
+        val rootPath = sd.name
 
-      parts += el.short?.takeIf { it.isNotBlank() }?.let { "\"${it.fsh()}\"" } ?: "\"\""
-      appendLine(parts.joinToString(" "))
+        val body =
+            buildString {
+                appendLine("Logical: ${sd.name}")
 
-      // ── Valeur fixée (Assignment Rule) ────────────────────────────────
-      el.fixed?.let { appendLine("* $fshPath = ${renderValue(it)}") }
+                sd.baseDefinition
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { appendLine("Parent: $it") }
 
-      // ── maxLength ───────────────────────────────────────────────────
-      el.maxLengthElement?.value?.takeIf { it > 0 }
-        ?.let { appendLine("* $fshPath ^maxLength = $it") }
+                sd.id
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { appendLine("Id: ${it.lowercase()}") }
 
-      // ── Extensions ──────────────────────────────────────────────────
-      el.extension.forEach { ext ->
-        append(renderExtension(ext, fshPath))
-      }
+                sd.title
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { appendLine("Title: \"${it.fsh()}\"") }
 
-      // ── Métadonnées textuelles ──────────────────────────────────────
-      el.definition?.takeIf { it.isNotBlank() && it != el.short }
-        ?.let { appendLine("* $fshPath ^definition = ${it.fshQuoted()}") }
+                sd.description
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { appendLine("Description: ${it.fshQuoted()}") }
 
-      el.comment?.takeIf { it.isNotBlank() }
-        ?.let { appendLine("* $fshPath ^comment = ${it.fshQuoted()}") }
+                // Characteristics (Logical models only)
+                val chars = sd.extension.filter { it.url == EXT_CHARACTERISTICS }
+                if (chars.isNotEmpty()) {
+                    appendLine("Characteristics: ${chars.joinToString(" ") { "#${it.value}" }}")
+                }
 
-      el.requirements?.takeIf { it.isNotBlank() }
-        ?.let { appendLine("* $fshPath ^requirements = ${it.fshQuoted()}") }
+                appendLine()
 
-      // obeys inline + collecte
-      el.constraint.forEach { c ->
-        invariants += c.toFshInvariant()
-        appendLine("* $fshPath obeys ${c.key}")
-      }
-    }
+                val allElements = sd.differential?.element.orEmpty()
+                val rootEl = allElements.firstOrNull()
+                val elements = allElements.drop(1)
 
-    return ElementRender(text, invariants)
-  }
+                // Root invariants → obeys on the profile itself
+                rootEl?.constraint.orEmpty().forEach { c ->
+                    invariants += c.toFshInvariant()
+                    appendLine("* obeys ${c.key}")
+                }
+                appendLine()
 
-  // ── Flags ─────────────────────────────────────────────────────────────
+                elements.forEach { el ->
+                    val rendered = renderElement(el, rootPath)
+                    append(rendered.text)
+                    invariants += rendered.invariants
+                }
 
-  /**
-   * Flags FSH inline : MS (mustSupport), ?! (isModifier), SU (isSummary),
-   * TU (experimental / Trial Use), N (normative).
-   * On retourne une chaîne vide s'il n'y a rien.
-   */
-  private fun buildInlineFlags(el: ElementDefinition): String {
-    val flags = buildList {
-      if (el.mustSupport)  add("MS")
-      if (el.isModifier)   add("?!")
-      if (el.isSummary)    add("SU")
-    }
-    return flags.joinToString(" ")
-  }
+                appendLine()
+            }
 
-  // ── Types ─────────────────────────────────────────────────────────────
+        // Top-level declarations emitted AFTER the Profile/Logical block
+        val invariantBlocks = invariants.joinToString("\n") { renderInvariantBlock(it) }
 
-  private fun buildTypeString(el: ElementDefinition): String {
-    if (el.type.isEmpty()) return ""
-    return el.type.joinToString(" or ") { renderTypeRef(it) }
-  }
-
-  private fun renderTypeRef(t: ElementDefinition.TypeRefComponent): String {
-    val code = t.code ?: return "string"
-    return when {
-      code == "Reference" && t.targetProfile.isNotEmpty() ->
-        "Reference(${t.targetProfile.joinToString(" or ") { it.value }})"
-
-      code == "canonical" && t.targetProfile.isNotEmpty() ->
-        "canonical(${t.targetProfile.joinToString(" or ") { it.value }})"
-
-      // Profil appliqué (DataType contraint)
-      t.profile.isNotEmpty() -> t.profile.first().value
-
-      else -> code
-    }
-  }
-
-  // ── Extensions ────────────────────────────────────────────────────────
-
-  private fun renderExtension(ext: Extension, rel: String): String = buildString {
-    appendExtSlice(ext, basePath = "* $rel ^extension")
-  }
-
-  // ── Valeurs FHIR → FSH ────────────────────────────────────────────────
-
-  private fun renderValue(t: Type): String = when (t) {
-    is BooleanType       -> t.booleanValue().toString()
-    is UnsignedIntType   -> t.value.toString()
-    is PositiveIntType   -> t.value.toString()
-    is IntegerType       -> t.value.toString()
-    is DecimalType       -> t.value.toPlainString()
-    is MarkdownType      -> "\"${t.value.fsh()}\""
-    is CodeType          -> "#${t.value}"
-    is IdType            -> "\"${t.value}\""
-    is StringType        -> "\"${t.value.fsh()}\""
-    is UrlType           -> "\"${t.value}\""
-    is CanonicalType     -> "\"${t.value}\""
-    is OidType           -> "\"${t.value}\""
-    is UuidType          -> "\"${t.value}\""
-    is UriType           -> "\"${t.value}\""
-    is Base64BinaryType  -> "\"${t.valueAsString}\""
-    is DateType          -> "\"${t.valueAsString}\""
-    is DateTimeType      -> "\"${t.valueAsString}\""
-    is TimeType          -> "\"${t.valueAsString}\""
-    is InstantType       -> "\"${t.valueAsString}\""
-    is Coding            -> renderCoding(t)
-    is CodeableConcept   -> t.coding.firstOrNull()?.let { renderCoding(it) }
-      ?: "\"${t.text?.fsh()}\""
-    is Quantity          -> renderQuantity(t)
-    else                 -> "\"${t.primitiveValue() ?: t.fhirType()}\""
-  }
-
-  private fun renderCoding(c: Coding): String =
-    if (!c.system.isNullOrBlank()) "${c.system}#${c.code ?: ""}"
-    else "#${c.code ?: ""}"
-
-  private fun renderQuantity(q: Quantity): String = buildString {
-    append(q.value?.toPlainString() ?: "")
-    q.unit?.let { append(" '${it}'") }
-    q.system?.let { append(" // system: $it") }
-    q.code?.let { append(" // code: $it") }
-  }
-
-  // ── Utilitaires String ────────────────────────────────────────────────
-
-  /** Échappe les guillemets et remplace les retours à la ligne. */
-  private fun String.fsh() =
-    replace("\\", "\\\\")
-      .replace("\"", "\\\"")
-      .replace("\r\n", " ")
-      .replace("\n", " ")
-      .replace("\r", " ")
-
-  /** Choisit la syntaxe triple-guillemets si la chaîne contient des sauts de ligne. */
-  private fun String.fshQuoted(): String =
-    if (contains('\n')) "\"\"\"${this}\"\"\"" else "\"${this.fsh()}\""
-
-  private fun String.capitalize() = replaceFirstChar { it.uppercaseChar() }
-
-  // ── Utilitaires StringBuilder ────────────────────────────────────────────────
-
-  private fun StringBuilder.appendExtSlice(ext: Extension, basePath: String) {
-    // Ouvre un nouveau slot dans le tableau FSH
-    appendLine("$basePath[+].url = \"${ext.url}\"")
-
-    // Toutes les références suivantes à ce slot utilisent [=]
-    val sliceRef = "$basePath[=]"
-
-    when {
-      ext.hasValue() ->
-        appendLine(
-          "$sliceRef.value${ext.value.fhirType().capitalize()} = ${renderValue(ext.value)}"
-        )
-
-      // Récursion : chaque sub-extension descend d'un niveau dans le chemin
-      ext.hasExtension() ->
-        ext.extension.forEach { sub ->
-          appendExtSlice(sub, basePath = "$sliceRef.extension")
+        return buildString {
+            append(body)
+            if (invariantBlocks.isNotBlank()) {
+                appendLine()
+                append(invariantBlocks)
+            }
         }
     }
-  }
+
+    // ── Invariants ────────────────────────────────────────────────────────
+
+    // Conversion from the HAPI model to a neutral FSH model
+    private fun ElementDefinition.ElementDefinitionConstraintComponent.toFshInvariant() =
+        FshInvariant(
+            key = key,
+            severity = severity?.toCode() ?: "error",
+            human = human?.takeIf { it.isNotBlank() },
+            expression = expression?.takeIf { it.isNotBlank() },
+        )
+
+    // Rendering of the top-level block
+    private fun renderInvariantBlock(inv: FshInvariant): String =
+        buildString {
+            appendLine("Invariant: ${inv.key}")
+            inv.human?.let { appendLine("Description: \"${it.fsh()}\"") }
+            inv.expression?.let { appendLine("Expression: \"${it.fsh()}\"") }
+            appendLine("Severity: #${inv.severity}")
+            appendLine()
+        }
+
+    // ── Element ───────────────────────────────────────────────────────────
+
+    private fun renderElement(
+        el: ElementDefinition,
+        rootPath: String,
+    ): ElementRender {
+        val invariants = mutableListOf<FshInvariant>()
+
+        val text =
+            buildString {
+                val fshPath = el.path.removePrefix("$rootPath.")
+
+                // ── Main line: cardinality + type + flags + short ─────────
+                val parts = mutableListOf("* $fshPath")
+
+                if (el.hasMin() || el.hasMax()) parts += "${el.min}..${el.max ?: "*"}"
+
+                val typeStr = buildTypeString(el)
+                if (typeStr.isNotBlank()) parts += typeStr
+
+                val flags = buildInlineFlags(el)
+                if (flags.isNotBlank()) parts += flags
+
+                parts += el.short?.takeIf { it.isNotBlank() }?.let { "\"${it.fsh()}\"" } ?: "\"\""
+                appendLine(parts.joinToString(" "))
+
+                // ── Fixed value (Assignment Rule) ────────────────────────────────
+                el.fixed?.let { appendLine("* $fshPath = ${renderValue(it)}") }
+
+                // ── maxLength ───────────────────────────────────────────────────
+                el.maxLengthElement
+                    ?.value
+                    ?.takeIf { it > 0 }
+                    ?.let { appendLine("* $fshPath ^maxLength = $it") }
+
+                // ── Extensions ──────────────────────────────────────────────────
+                el.extension.forEach { ext ->
+                    append(renderExtension(ext, fshPath))
+                }
+
+                // ── Textual metadata ──────────────────────────────────────
+                el.definition
+                    ?.takeIf { it.isNotBlank() && it != el.short }
+                    ?.let { appendLine("* $fshPath ^definition = ${it.fshQuoted()}") }
+
+                el.comment
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { appendLine("* $fshPath ^comment = ${it.fshQuoted()}") }
+
+                el.requirements
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { appendLine("* $fshPath ^requirements = ${it.fshQuoted()}") }
+
+                // inline obeys + collection
+                el.constraint.forEach { c ->
+                    invariants += c.toFshInvariant()
+                    appendLine("* $fshPath obeys ${c.key}")
+                }
+            }
+
+        return ElementRender(text, invariants)
+    }
+
+    // ── Flags ─────────────────────────────────────────────────────────────
+
+    /**
+     * Inline FSH flags: MS (mustSupport), ?! (isModifier), SU (isSummary),
+     * TU (experimental / Trial Use), N (normative).
+     * Returns an empty string if there is nothing.
+     */
+    private fun buildInlineFlags(el: ElementDefinition): String {
+        val flags =
+            buildList {
+                if (el.mustSupport) add("MS")
+                if (el.isModifier) add("?!")
+                if (el.isSummary) add("SU")
+            }
+        return flags.joinToString(" ")
+    }
+
+    // ── Types ─────────────────────────────────────────────────────────────
+
+    private fun buildTypeString(el: ElementDefinition): String {
+        if (el.type.isEmpty()) return ""
+        return el.type.joinToString(" or ") { renderTypeRef(it) }
+    }
+
+    private fun renderTypeRef(t: ElementDefinition.TypeRefComponent): String {
+        val code = t.code ?: return "string"
+        return when {
+            code == "Reference" && t.targetProfile.isNotEmpty() ->
+                "Reference(${t.targetProfile.joinToString(" or ") { it.value }})"
+
+            code == "canonical" && t.targetProfile.isNotEmpty() ->
+                "canonical(${t.targetProfile.joinToString(" or ") { it.value }})"
+
+            // Applied profile (constrained DataType)
+            t.profile.isNotEmpty() -> t.profile.first().value
+
+            else -> code
+        }
+    }
+
+    // ── Extensions ────────────────────────────────────────────────────────
+
+    private fun renderExtension(
+        ext: Extension,
+        rel: String,
+    ): String =
+        buildString {
+            appendExtSlice(ext, basePath = "* $rel ^extension")
+        }
+
+    // ── FHIR values → FSH ────────────────────────────────────────────────
+
+    private fun renderValue(t: Type): String =
+        when (t) {
+            is BooleanType -> t.booleanValue().toString()
+            is UnsignedIntType -> t.value.toString()
+            is PositiveIntType -> t.value.toString()
+            is IntegerType -> t.value.toString()
+            is DecimalType -> t.value.toPlainString()
+            is MarkdownType -> "\"${t.value.fsh()}\""
+            is CodeType -> "#${t.value}"
+            is IdType -> "\"${t.value}\""
+            is StringType -> "\"${t.value.fsh()}\""
+            is UrlType -> "\"${t.value}\""
+            is CanonicalType -> "\"${t.value}\""
+            is OidType -> "\"${t.value}\""
+            is UuidType -> "\"${t.value}\""
+            is UriType -> "\"${t.value}\""
+            is Base64BinaryType -> "\"${t.valueAsString}\""
+            is DateType -> "\"${t.valueAsString}\""
+            is DateTimeType -> "\"${t.valueAsString}\""
+            is TimeType -> "\"${t.valueAsString}\""
+            is InstantType -> "\"${t.valueAsString}\""
+            is Coding -> renderCoding(t)
+            is CodeableConcept ->
+                t.coding.firstOrNull()?.let { renderCoding(it) }
+                    ?: "\"${t.text?.fsh()}\""
+            is Quantity -> renderQuantity(t)
+            else -> "\"${t.primitiveValue() ?: t.fhirType()}\""
+        }
+
+    private fun renderCoding(c: Coding): String =
+        if (!c.system.isNullOrBlank()) {
+            "${c.system}#${c.code ?: ""}"
+        } else {
+            "#${c.code ?: ""}"
+        }
+
+    private fun renderQuantity(q: Quantity): String =
+        buildString {
+            append(q.value?.toPlainString() ?: "")
+            q.unit?.let { append(" '$it'") }
+            q.system?.let { append(" // system: $it") }
+            q.code?.let { append(" // code: $it") }
+        }
+
+    // ── String utilities ────────────────────────────────────────────────
+
+    /** Escapes quotes and replaces line breaks. */
+    private fun String.fsh() =
+        replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\r\n", " ")
+            .replace("\n", " ")
+            .replace("\r", " ")
+
+    /** Chooses triple-quote syntax if the string contains line breaks. */
+    private fun String.fshQuoted(): String = if (contains('\n')) "\"\"\"${this}\"\"\"" else "\"${this.fsh()}\""
+
+    private fun String.capitalize() = replaceFirstChar { it.uppercaseChar() }
+
+    // ── StringBuilder utilities ────────────────────────────────────────────────
+
+    private fun StringBuilder.appendExtSlice(
+        ext: Extension,
+        basePath: String,
+    ) {
+        // Opens a new slot in the FSH array
+        appendLine("$basePath[+].url = \"${ext.url}\"")
+
+        // All following references to this slot use [=]
+        val sliceRef = "$basePath[=]"
+
+        when {
+            ext.hasValue() ->
+                appendLine(
+                    "$sliceRef.value${ext.value.fhirType().capitalize()} = ${renderValue(ext.value)}",
+                )
+
+            // Recursion: each sub-extension descends one level in the path
+            ext.hasExtension() ->
+                ext.extension.forEach { sub ->
+                    appendExtSlice(sub, basePath = "$sliceRef.extension")
+                }
+        }
+    }
 }

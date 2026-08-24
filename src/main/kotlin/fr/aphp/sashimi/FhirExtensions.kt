@@ -1,9 +1,9 @@
 package fr.aphp.sashimi
 
 /**
- * URL de l'extension FHIR standard structuredefinition-type-characteristics,
- * partagée entre [fr.aphp.sashimi.mapper.StructureDefinitionMapper] (qui l'émet)
- * et [fr.aphp.sashimi.writer.FshWriter] (qui la reconnaît pour le mot-clé
- * FSH `Characteristics:`).
+ * URL of the standard FHIR extension structuredefinition-type-characteristics,
+ * shared between [fr.aphp.sashimi.mapper.StructureDefinitionMapper] (which emits
+ * it) and [fr.aphp.sashimi.writer.FshWriter] (which recognizes it for the FSH
+ * `Characteristics:` keyword).
  */
 const val EXT_CHARACTERISTICS = "http://hl7.org/fhir/StructureDefinition/structuredefinition-type-characteristics"
