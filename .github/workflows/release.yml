@@ -28,6 +28,9 @@ jobs:
         id: version
         run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
       - name: Build
         run: ./gradlew build -PreleaseVersion=${{ steps.version.outputs.value }} --console=plain
 
