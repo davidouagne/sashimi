@@ -11,6 +11,7 @@ Characteristics: #can-be-target
 * id 1..1 BackboneElement ""
 * id.value 1..1 uuid ""
 * id.isPrimaryKey 1..1 boolean "Primary key member"
+* id.isPrimaryKey = true
 * patientId 1..1 uuid ""
 * encounterDate 1..1 dateTime ""
 * dischargeDate 0..1 dateTime ""

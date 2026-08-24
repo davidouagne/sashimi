@@ -17,123 +17,166 @@ Characteristics: #can-be-target
 * wertid 1..1 BackboneElement ""
 * wertid.value 1..1 decimal "Primary Key"
 * wertid.isPrimaryKey 1..1 boolean "Primary key member"
+* wertid.isPrimaryKey = true
 * wertid.precision 1..1 integer "Numeric precision"
+* wertid.precision = 38
 * methodenid 0..1 BackboneElement ""
 * methodenid.value 0..1 decimal "deprecated: \"use MEASURINGMETHOD\""
 * methodenid.precision 1..1 integer "Numeric precision"
+* methodenid.precision = 38
 * punktortid 0..1 BackboneElement ""
 * punktortid.value 0..1 decimal ""
 * punktortid.precision 1..1 integer "Numeric precision"
+* punktortid.precision = 38
 * dropEinhid 0..1 BackboneElement ""
 * dropEinhid.value 0..1 decimal ""
 * dropEinhid.precision 1..1 integer "Numeric precision"
+* dropEinhid.precision = 38
 * zugId 0..1 BackboneElement ""
 * zugId.precision 1..1 integer "Numeric precision"
+* zugId.precision = 38
 * zugId.fk1 1..1 BackboneElement "Foreign key to OsMupZugaenge"
 * zugId.fk1.reference 1..1 Reference(OsMupZugaenge) ""
 * zugId.fk1.targetColumn 1..1 string ""
+* zugId.fk1.targetColumn = "zugId"
 * zeitpunkt 1..1 date ""
 * bem 0..1 string ""
 * bem ^maxLength = 4000
 * protid 0..1 BackboneElement ""
 * protid.precision 1..1 integer "Numeric precision"
+* protid.precision = 38
 * protid.fk1 1..1 BackboneElement "Foreign key to OsKernProtokolle"
 * protid.fk1.reference 1..1 Reference(OsKernProtokolle) ""
 * protid.fk1.targetColumn 1..1 string ""
+* protid.fk1.targetColumn = "protid"
 * dropInttagid 0..1 BackboneElement ""
 * dropInttagid.value 0..1 decimal ""
 * dropInttagid.precision 1..1 integer "Numeric precision"
+* dropInttagid.precision = 38
 * befundartid 1..1 BackboneElement ""
 * befundartid.precision 1..1 integer "Numeric precision"
+* befundartid.precision = 38
 * befundartid.fk1 1..1 BackboneElement "Foreign key to OsMedBefundart"
 * befundartid.fk1.reference 1..1 Reference(OsMedBefundart) ""
 * befundartid.fk1.targetColumn 1..1 string ""
+* befundartid.fk1.targetColumn = "befundartid"
 * einheitid 0..1 BackboneElement ""
 * einheitid.value 0..1 decimal ""
 * einheitid.precision 1..1 integer "Numeric precision"
+* einheitid.precision = 38
 * aufenthTherplanid 0..1 BackboneElement ""
 * aufenthTherplanid.precision 1..1 integer "Numeric precision"
+* aufenthTherplanid.precision = 38
 * aufenthTherplanid.fk1 1..1 BackboneElement "Foreign key to OsMedAufenthTherplan"
 * aufenthTherplanid.fk1.reference 1..1 Reference(OsMedAufenthTherplan) ""
 * aufenthTherplanid.fk1.targetColumn 1..1 string ""
+* aufenthTherplanid.fk1.targetColumn = "aufenthTherplanid"
 * stornoDatum 0..1 date ""
 * stornoMaid 0..1 BackboneElement ""
 * stornoMaid.precision 1..1 integer "Numeric precision"
+* stornoMaid.precision = 38
 * stornoMaid.fk1 1..1 BackboneElement "Foreign key to OsKernMitarbeiter"
 * stornoMaid.fk1.reference 1..1 Reference(OsKernMitarbeiter) ""
 * stornoMaid.fk1.targetColumn 1..1 string ""
+* stornoMaid.fk1.targetColumn = "maid"
 * komplikation 0..1 string ""
 * komplikation ^maxLength = 254
 * fallid 0..1 BackboneElement ""
 * fallid.precision 1..1 integer "Numeric precision"
+* fallid.precision = 38
 * fallid.fk1 1..1 BackboneElement "Foreign key to OsKernFall"
 * fallid.fk1.reference 1..1 Reference(OsKernFall) ""
 * fallid.fk1.targetColumn 1..1 string ""
+* fallid.fk1.targetColumn = "fallid"
 * validDate 0..1 date ""
 * validMaid 0..1 BackboneElement ""
 * validMaid.precision 1..1 integer "Numeric precision"
+* validMaid.precision = 38
 * validMaid.fk1 1..1 BackboneElement "Foreign key to OsKernMitarbeiter"
 * validMaid.fk1.reference 1..1 Reference(OsKernMitarbeiter) ""
 * validMaid.fk1.targetColumn 1..1 string ""
+* validMaid.fk1.targetColumn = "maid"
 * textvalue 0..1 string ""
 * textvalue ^maxLength = 254
 * megsjobId 0..1 BackboneElement ""
 * megsjobId.precision 1..1 integer "Numeric precision"
+* megsjobId.precision = 38
 * megsjobId.fk1 1..1 BackboneElement "Foreign key to OsMupMegsjob"
 * megsjobId.fk1.reference 1..1 Reference(OsMupMegsjob) ""
 * megsjobId.fk1.targetColumn 1..1 string ""
+* megsjobId.fk1.targetColumn = "megsjobId"
 * measuringmethod 0..1 BackboneElement ""
 * measuringmethod.precision 1..1 integer "Numeric precision"
+* measuringmethod.precision = 38
 * measuringmethod.fk1 1..1 BackboneElement "Foreign key to OsSysCatalogdef"
 * measuringmethod.fk1.reference 1..1 Reference(OsSysCatalogdef) ""
 * measuringmethod.fk1.targetColumn 1..1 string ""
+* measuringmethod.fk1.targetColumn = "dbuid"
 * localisation 0..1 BackboneElement ""
 * localisation.precision 1..1 integer "Numeric precision"
+* localisation.precision = 38
 * localisation.fk1 1..1 BackboneElement "Foreign key to OsSysCatalogdef"
 * localisation.fk1.reference 1..1 Reference(OsSysCatalogdef) ""
 * localisation.fk1.targetColumn 1..1 string ""
+* localisation.fk1.targetColumn = "dbuid"
 * unit 0..1 BackboneElement ""
 * unit.precision 1..1 integer "Numeric precision"
+* unit.precision = 38
 * unit.fk1 1..1 BackboneElement "Foreign key to OsSysCatalogdef"
 * unit.fk1.reference 1..1 Reference(OsSysCatalogdef) ""
 * unit.fk1.targetColumn 1..1 string ""
+* unit.fk1.targetColumn = "dbuid"
 * megsparameterid 0..1 BackboneElement ""
 * megsparameterid.value 0..1 decimal ""
 * megsparameterid.precision 1..1 integer "Numeric precision"
+* megsparameterid.precision = 38
 * primitivum 0..1 BackboneElement ""
 * primitivum.value 0..1 decimal ""
 * primitivum.precision 1..1 integer "Numeric precision"
+* primitivum.precision = 38
 * relevance 0..1 BackboneElement ""
 * relevance.precision 1..1 integer "Numeric precision"
+* relevance.precision = 38
 * relevance.fk1 1..1 BackboneElement "Foreign key to OsSysCatalogdef"
 * relevance.fk1.reference 1..1 Reference(OsSysCatalogdef) ""
 * relevance.fk1.targetColumn 1..1 string ""
+* relevance.fk1.targetColumn = "dbuid"
 * origin 0..1 BackboneElement ""
 * origin.precision 1..1 integer "Numeric precision"
+* origin.precision = 38
 * origin.fk1 1..1 BackboneElement "Foreign key to OsSysCatalogdef"
 * origin.fk1.reference 1..1 Reference(OsSysCatalogdef) ""
 * origin.fk1.targetColumn 1..1 string ""
+* origin.fk1.targetColumn = "dbuid"
 * felddefinition 0..1 BackboneElement ""
 * felddefinition.value 0..1 decimal ""
 * felddefinition.precision 1..1 integer "Numeric precision"
+* felddefinition.precision = 38
 * subitemnummer 0..1 BackboneElement ""
 * subitemnummer.value 0..1 decimal ""
 * subitemnummer.precision 1..1 integer "Numeric precision"
+* subitemnummer.precision = 38
 * laufnummer 0..1 BackboneElement ""
 * laufnummer.value 0..1 decimal ""
 * laufnummer.precision 1..1 integer "Numeric precision"
+* laufnummer.precision = 38
 * measurementstatusid 1..1 BackboneElement ""
 * measurementstatusid.precision 1..1 integer "Numeric precision"
+* measurementstatusid.precision = 38
 * measurementstatusid.fk1 1..1 BackboneElement "Foreign key to OsSysCatalogdef"
 * measurementstatusid.fk1.reference 1..1 Reference(OsSysCatalogdef) ""
 * measurementstatusid.fk1.targetColumn 1..1 string ""
+* measurementstatusid.fk1.targetColumn = "dbuid"
 * wert 0..1 BackboneElement ""
 * wert.value 0..1 decimal ""
 * wert.precision 1..1 integer "Numeric precision"
+* wert.precision = 12
 * wert.scale 0..1 integer "Numeric scale"
+* wert.scale = 4
 * documentsubid 0..1 BackboneElement ""
 * documentsubid.value 0..1 decimal ""
 * documentsubid.precision 1..1 integer "Numeric precision"
+* documentsubid.precision = 38
 
 
 Invariant: sys-c00121080

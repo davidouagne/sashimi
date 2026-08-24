@@ -14,18 +14,24 @@ Characteristics: #can-be-target
 * id 1..1 BackboneElement ""
 * id.value 1..1 uuid ""
 * id.isPrimaryKey 1..1 boolean "Primary key member"
+* id.isPrimaryKey = true
 * code 0..1 BackboneElement ""
 * code.value 0..1 string ""
 * code.value ^maxLength = 10
 * code.uniqueKeyName 1..1 string "Unique key name"
+* code.uniqueKeyName = "uq-code"
 * a 0..1 BackboneElement ""
 * a.value 0..1 integer ""
 * a.uniqueKeyName 1..1 string "Unique key name"
+* a.uniqueKeyName = "uq-a-b"
 * a.precision 1..1 integer "Numeric precision"
+* a.precision = 10
 * b 0..1 BackboneElement ""
 * b.value 0..1 integer ""
 * b.uniqueKeyName 1..1 string "Unique key name"
+* b.uniqueKeyName = "uq-a-b"
 * b.precision 1..1 integer "Numeric precision"
+* b.precision = 10
 
 
 Invariant: chk-a-0

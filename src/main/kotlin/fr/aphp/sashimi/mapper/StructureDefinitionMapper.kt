@@ -6,13 +6,16 @@ import fr.aphp.sashimi.parser.SqlForeignKey
 import fr.aphp.sashimi.parser.SqlTable
 import fr.aphp.sashimi.parser.SqlUniqueKey
 import jakarta.enterprise.context.ApplicationScoped
+import org.hl7.fhir.r4.model.BooleanType
 import org.hl7.fhir.r4.model.CodeType
 import org.hl7.fhir.r4.model.ElementDefinition
 import org.hl7.fhir.r4.model.ElementDefinition.TypeRefComponent
 import org.hl7.fhir.r4.model.Enumerations.PublicationStatus
 import org.hl7.fhir.r4.model.Extension
 import org.hl7.fhir.r4.model.IntegerType
+import org.hl7.fhir.r4.model.StringType
 import org.hl7.fhir.r4.model.StructureDefinition
+import org.hl7.fhir.r4.model.Type
 import org.hl7.fhir.r4.model.StructureDefinition.StructureDefinitionKind
 import org.hl7.fhir.r4.model.StructureDefinition.TypeDerivationRule
 
@@ -259,25 +262,33 @@ class StructureDefinitionMapper {
       elements += buildPrimitiveElement(context, "$elementPath.value")
     }
 
+    // Chaque fait ci-dessous est connu au moment du mapping (résolu depuis la DDL) et constant
+    // pour toutes les lignes de la colonne : on le fixe via une Assignment Rule, en plus de sa
+    // déclaration — même logique que l'ancienne extension (`^extension[=].value... = ...`), pas
+    // seulement sa forme. Seuls `.value` et `.fkN.reference` restent sans valeur fixée : ce sont
+    // des données propres à chaque enregistrement, pas des faits de schéma.
     if (context.isPrimaryKey) {
-      elements += leafElement("$elementPath.isPrimaryKey", 1, "1", "boolean", "Primary key member")
+      elements += leafElement("$elementPath.isPrimaryKey", 1, "1", "boolean", "Primary key member", BooleanType(true))
     }
 
     context.uniqueKey?.let {
-      elements += leafElement("$elementPath.uniqueKeyName", 1, "1", "string", "Unique key name")
+      elements += leafElement("$elementPath.uniqueKeyName", 1, "1", "string", "Unique key name", StringType(uniqueKeyName(it)))
     }
 
     if (column.precision > 0) {
-      elements += leafElement("$elementPath.precision", 1, "1", "integer", "Numeric precision")
+      elements += leafElement("$elementPath.precision", 1, "1", "integer", "Numeric precision", IntegerType(column.precision))
     }
 
     if (column.scale > 0) {
-      elements += leafElement("$elementPath.scale", 0, "1", "integer", "Numeric scale")
+      elements += leafElement("$elementPath.scale", 0, "1", "integer", "Numeric scale", IntegerType(column.scale))
     }
 
     context.foreignKeys.forEachIndexed { index, fk ->
       val fkPath = "$elementPath.fk${index + 1}"
       val targetSdName = fk.targetTable.toPascalCase()
+      // Colonne cible correspondant *positionnellement* à la colonne locale (voir ticket #10 :
+      // localColumns[i] <-> targetColumns[i], pas le produit cartésien des deux listes).
+      val targetColumnName = fk.targetColumns[fk.localColumns.indexOf(column.name)].toCamelCase()
 
       elements += ElementDefinition().apply {
         id    = fkPath
@@ -297,7 +308,7 @@ class StructureDefinitionMapper {
           addTargetProfile(targetSdName)
         })
       }
-      elements += leafElement("$fkPath.targetColumn", 1, "1", "string", null)
+      elements += leafElement("$fkPath.targetColumn", 1, "1", "string", null, StringType(targetColumnName))
     }
 
     return elements
@@ -316,7 +327,9 @@ class StructureDefinitionMapper {
     }
   }
 
-  private fun leafElement(path: String, min: Int, max: String, typeCode: String, short: String?): ElementDefinition =
+  private fun leafElement(
+    path: String, min: Int, max: String, typeCode: String, short: String?, fixed: Type? = null,
+  ): ElementDefinition =
     ElementDefinition().apply {
       id   = path
       this.path = path
@@ -324,6 +337,7 @@ class StructureDefinitionMapper {
       this.max  = max
       addType(TypeRefComponent().apply { code = typeCode })
       short?.let { this.short = it }
+      fixed?.let { this.fixed = it }
     }
 
   /** Nom d'une UNIQUE (verbatim si nommée), ou repli basé sur ses colonnes si anonyme (ex. code -> uq-code). */

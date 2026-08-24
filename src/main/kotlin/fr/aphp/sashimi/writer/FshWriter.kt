@@ -156,6 +156,9 @@ class FshWriter {
       parts += el.short?.takeIf { it.isNotBlank() }?.let { "\"${it.fsh()}\"" } ?: "\"\""
       appendLine(parts.joinToString(" "))
 
+      // ── Valeur fixée (Assignment Rule) ────────────────────────────────
+      el.fixed?.let { appendLine("* $fshPath = ${renderValue(it)}") }
+
       // ── maxLength ───────────────────────────────────────────────────
       el.maxLengthElement?.value?.takeIf { it > 0 }
         ?.let { appendLine("* $fshPath ^maxLength = $it") }

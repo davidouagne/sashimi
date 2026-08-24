@@ -25,7 +25,7 @@ When wrapped, the children present are the union of whichever facts apply — ev
 
 The wrapper's own cardinality is the column's original min/max; `.value`, when present, inherits that same min/max (see `code`/`stornoDatum`/`relativefallnr` below — all `0..1` wrapper *and* `0..1` `.value`); `.isPrimaryKey`/`.uniqueKeyName`/`.precision`/`.fkN.*` are always `1..1` when present, `.scale` is `0..1` when present. `^maxLength` and the column's own `short`/definition text (from `column.comment`) move to `.value` when present — they have no home on an FK-only column (no `.value`), so they are dropped there (see #21: already semantically questionable on a `Reference`-typed element today).
 
-None of the Backbone Element children carry a fixed/pattern value (no FSH Assignment Rule, no `^fixed[x]`) — they are declared (type + cardinality + short text) the same way for every column sharing a fact, e.g. `.uniqueKeyName` always reads `"Unique key name"` regardless of the actual resolved constraint name. A conforming instance is expected to supply the real value on every row (see the ADR's "Schema fact → per-instance data field" consequence).
+Every child above **except `.value` and `.fkN.reference`** carries a fixed value, via an FSH Assignment Rule right after its declaration — the same pinning role the extension's `value[x]` used to play: `.isPrimaryKey = true` (always true when present), `.uniqueKeyName = "<resolved name>"`, `.precision = <the actual integer>`, `.scale = <the actual integer>`, `.fkN.targetColumn = "<the resolved target column>"`. `.value` and `.fkN.reference` are the two facts that genuinely vary per row (the column's own scalar, and which target instance a given row references) — those stay declared with no fixed value.
 
 No composition case is special-cased beyond this table — a column with PK + UNIQUE + precision (see `fallid` below) gets all three fact children as siblings, exactly like a column with only one fact would get just that one.
 
@@ -48,6 +48,7 @@ Both fixtures render a different table (`encounter`, `patient_record`) from the 
 * id 1..1 BackboneElement ""
   * value 1..1 uuid ""
   * isPrimaryKey 1..1 boolean "Primary key member"
+  * isPrimaryKey = true
 * patientId 1..1 uuid ""
 * encounterDate 1..1 dateTime ""
 * dischargeDate 0..1 dateTime ""
@@ -61,6 +62,7 @@ Both fixtures render a different table (`encounter`, `patient_record`) from the 
 * id 1..1 BackboneElement ""
   * value 1..1 uuid ""
   * isPrimaryKey 1..1 boolean "Primary key member"
+  * isPrimaryKey = true
 * ipp 1..1 string ""
 * ipp ^maxLength = 20
 * lastName 1..1 string ""
@@ -92,7 +94,9 @@ After:
 * wertid 1..1 BackboneElement ""
   * value 1..1 decimal "Primary Key"
   * isPrimaryKey 1..1 boolean "Primary key member"
+  * isPrimaryKey = true
   * precision 1..1 integer "Numeric precision"
+  * precision = 38
 ```
 
 `zugId` — precision + FK (no PK, no UNIQUE):
@@ -108,11 +112,13 @@ Before:
 After:
 * zugId 0..1 BackboneElement ""
   * precision 1..1 integer "Numeric precision"
+  * precision = 38
   * fk1 1..1 BackboneElement "Foreign key to OsMupZugaenge"
     * reference 1..1 Reference(OsMupZugaenge) ""
     * targetColumn 1..1 string ""
+    * targetColumn = "zugId"
 ```
-(No `.value` — the FK consumes that role, per #21.)
+(No `.value` — the FK consumes that role, per #21. `.fk1.reference` also has no fixed value — it's the actual row's target reference, not a schema constant.)
 
 `zeitpunkt`, `bem`, `komplikation`, `textvalue` and the other plain columns with no PK/UNIQUE/FK/precision fact are **unchanged** — they stay unwrapped primitives, exactly as today.
 
@@ -137,8 +143,11 @@ After:
 * fallid 1..1 BackboneElement ""
   * value 1..1 decimal ""
   * isPrimaryKey 1..1 boolean "Primary key member"
+  * isPrimaryKey = true
   * uniqueKeyName 1..1 string "Unique key name"
+  * uniqueKeyName = "UK2_FALL"
   * precision 1..1 integer "Numeric precision"
+  * precision = 38
 ```
 
 `stornoUserid` — plain single FK + precision (same pattern as `os-mup-messungen`'s `zugId`):
@@ -154,9 +163,11 @@ Before:
 After:
 * stornoUserid 0..1 BackboneElement ""
   * precision 1..1 integer "Numeric precision"
+  * precision = 38
   * fk1 1..1 BackboneElement "Foreign key to OsSysSecUser"
     * reference 1..1 Reference(OsSysSecUser) ""
     * targetColumn 1..1 string ""
+    * targetColumn = "userId"
 ```
 
 `relativefallnr` — UNIQUE-only (member of the same composite `UK2_FALL` as `fallid` and `stornoDatum`, no cross-column link marker between them, matches #10's existing precedent):
@@ -172,6 +183,7 @@ After:
   * value 0..1 string ""
   * value ^maxLength = 30
   * uniqueKeyName 1..1 string "Unique key name"
+  * uniqueKeyName = "UK2_FALL"
 ```
 
 `stornoDatum` — UNIQUE-only, same composite key, different SQL type (`date`):
@@ -185,6 +197,7 @@ After:
 * stornoDatum 0..1 BackboneElement ""
   * value 0..1 date ""
   * uniqueKeyName 1..1 string "Unique key name"
+  * uniqueKeyName = "UK2_FALL"
 ```
 
 The remaining ~80 columns of this fixture are each one of the patterns already fully worked out above (plain unwrapped column, precision-only, precision+FK, UNIQUE-only, PK+UNIQUE+precision) or the CHECK-constraint invariants (`* obeys ...` block, entirely untouched by this migration — CHECK constraints already use FHIR's native constraint mechanism, not extensions). Not transcribed individually.

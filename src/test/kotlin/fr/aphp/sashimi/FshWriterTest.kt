@@ -137,8 +137,9 @@ class FshWriterTest {
         """
 
         @Test
-        fun `colonne PK enveloppee en BackboneElement avec enfant isPrimaryKey`() {
-            assertContains(fsh(ddl), "* id 1..1 BackboneElement", "* id.isPrimaryKey 1..1 boolean")
+        fun `colonne PK enveloppee en BackboneElement avec enfant isPrimaryKey fixe a true`() {
+            assertContains(fsh(ddl),
+                "* id 1..1 BackboneElement", "* id.isPrimaryKey 1..1 boolean", "* id.isPrimaryKey = true")
         }
 
         @Test
@@ -150,10 +151,10 @@ class FshWriterTest {
                     CONSTRAINT pk_t PRIMARY KEY (id)
                 );
             """)
-            // isPrimaryKey ne doit apparaître qu'une fois (pour id) ; name reste un élément primitif.
+            // isPrimaryKey ne doit être déclaré qu'une fois (pour id) ; name reste un élément primitif.
             assertEquals(1,
-                fsh.lines().count { it.contains("isPrimaryKey") },
-                "isPrimaryKey doit apparaître exactement une fois")
+                fsh.lines().count { it.contains("isPrimaryKey 1..1 boolean") },
+                "isPrimaryKey doit être déclaré exactement une fois")
             assertContains(fsh, "* name 1..1 string")
         }
 
@@ -166,8 +167,10 @@ class FshWriterTest {
                     CONSTRAINT pk_t PRIMARY KEY (col_a, col_b)
                 );
             """)
-            assertEquals(2, fsh.lines().count { it.contains("isPrimaryKey") },
+            assertEquals(2, fsh.lines().count { it.contains("isPrimaryKey 1..1 boolean") },
                 "PK composite : isPrimaryKey attendu sur 2 colonnes")
+            assertEquals(2, fsh.lines().count { it.trim() == "* colA.isPrimaryKey = true" || it.trim() == "* colB.isPrimaryKey = true" },
+                "PK composite : chaque colonne doit fixer isPrimaryKey à true")
         }
     }
 
@@ -191,12 +194,13 @@ class FshWriterTest {
         }
 
         @Test
-        fun `groupe fk1 emis avec reference et targetColumn`() {
+        fun `groupe fk1 emis avec reference et targetColumn fixe a la colonne cible`() {
             assertContains(fsh(ddl),
                 "* patientId 0..1 BackboneElement",
                 "* patientId.fk1 1..1 BackboneElement",
                 "* patientId.fk1.reference 1..1 Reference(",
-                "* patientId.fk1.targetColumn 1..1 string")
+                "* patientId.fk1.targetColumn 1..1 string",
+                "* patientId.fk1.targetColumn = \"id\"")
         }
 
         @Test
@@ -260,14 +264,15 @@ class FshWriterTest {
     inner class ContrainteUnique {
 
         @Test
-        fun `colonne UNIQUE enveloppee en BackboneElement avec enfant uniqueKeyName`() {
+        fun `colonne UNIQUE enveloppee en BackboneElement avec enfant uniqueKeyName fixe au nom resolu`() {
             val fsh = fsh("""
                 CREATE TABLE t (
                     code TEXT NOT NULL,
                     CONSTRAINT uq_code UNIQUE (code)
                 );
             """)
-            assertContains(fsh, "* code 1..1 BackboneElement", "* code.uniqueKeyName 1..1 string")
+            assertContains(fsh,
+                "* code 1..1 BackboneElement", "* code.uniqueKeyName 1..1 string", "* code.uniqueKeyName = \"UQ_CODE\"")
         }
     }
 
