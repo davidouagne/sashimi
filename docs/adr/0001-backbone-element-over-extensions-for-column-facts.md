@@ -1,6 +1,6 @@
 # Represent column-level SQL facts as BackboneElement children, not extensions
 
-**Status:** proposed (spec complete, not yet implemented — see [wayfinder map #18](https://github.com/davidouagne/sashimi/issues/18))
+**Status:** accepted, implemented (see [wayfinder map #18](https://github.com/davidouagne/sashimi/issues/18))
 
 Until now, `StructureDefinitionMapper` expressed four SQL-column facts (Primary Key membership, Foreign Key target column, Unique Key membership, numeric precision/scale) as FHIR extensions on the column's `ElementDefinition`. Per an internal modeling standard, extensions are considered second-class for a Logical Model, so we decided to replace all four with nested `BackboneElement` children instead (e.g. `id.isPrimaryKey: boolean` instead of an `ext-sql-is-pk` extension).
 

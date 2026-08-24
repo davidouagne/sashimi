@@ -6,14 +6,12 @@ import fr.aphp.sashimi.parser.SqlForeignKey
 import fr.aphp.sashimi.parser.SqlTable
 import fr.aphp.sashimi.parser.SqlUniqueKey
 import jakarta.enterprise.context.ApplicationScoped
-import org.hl7.fhir.r4.model.BooleanType
 import org.hl7.fhir.r4.model.CodeType
 import org.hl7.fhir.r4.model.ElementDefinition
 import org.hl7.fhir.r4.model.ElementDefinition.TypeRefComponent
 import org.hl7.fhir.r4.model.Enumerations.PublicationStatus
 import org.hl7.fhir.r4.model.Extension
 import org.hl7.fhir.r4.model.IntegerType
-import org.hl7.fhir.r4.model.StringType
 import org.hl7.fhir.r4.model.StructureDefinition
 import org.hl7.fhir.r4.model.StructureDefinition.StructureDefinitionKind
 import org.hl7.fhir.r4.model.StructureDefinition.TypeDerivationRule
@@ -43,26 +41,23 @@ data class MappingResult(val successes: List<StructureDefinition>, val failures:
  * Transforme chaque [SqlTable] (déjà entièrement résolu par
  * [fr.aphp.sashimi.parser.SqlTableParser]) en [StructureDefinition] HAPI FHIR R4.
  *
- * | Source DDL        | Cible FHIR                                                    |
- * |-------------------|---------------------------------------------------------------|
- * | Colonne + type    | ElementDefinition avec type FHIR primitif                     |
- * | NOT NULL          | min = 1                                                       |
- * | NULL              | min = 0                                                       |
- * | PRIMARY KEY       | extension ext-sql-pk (valeur : true)                          |
- * | FOREIGN KEY       | type = Reference (SD cible) + extension ext-sql-fk-columns     |
- * | UNIQUE KEY        | extension ext-sql-unique sur la colonne concernée             |
- * | CHECK IS NOT NULL | renforce la cardinalité min = 1                               |
- * | Précision/échelle | extension ext-sql-precision "(precision,scale)"               |
+ * | Source DDL        | Cible FHIR                                                          |
+ * |-------------------|----------------------------------------------------------------------|
+ * | Colonne + type    | ElementDefinition avec type FHIR primitif (colonne sans aucun fait)  |
+ * | Colonne + faits   | ElementDefinition BackboneElement, enfants `.value`/`.isPrimaryKey`/`.uniqueKeyName`/`.precision`/`.scale`/`.fkN.*` (voir `docs/backbone-element-migration-spec.md`) |
+ * | NOT NULL          | min = 1                                                               |
+ * | NULL              | min = 0                                                               |
+ * | PRIMARY KEY       | enfant BackboneElement `.isPrimaryKey: boolean`                      |
+ * | FOREIGN KEY       | groupe BackboneElement `.fkN.reference: Reference(SD cible)` + `.fkN.targetColumn: string` |
+ * | UNIQUE KEY        | enfant BackboneElement `.uniqueKeyName: string`                      |
+ * | CHECK IS NOT NULL | renforce la cardinalité min = 1                                      |
+ * | Précision/échelle | enfants BackboneElement `.precision: integer` / `.scale: integer`    |
  */
 @ApplicationScoped
 class StructureDefinitionMapper {
 
   companion object {
-    const val BASE_URL       = "https://interop.aphp.fr/fhir/StructureDefinition"
-    const val EXT_IS_PK      = "$BASE_URL/ext-sql-is-pk"
-    const val EXT_FK_COLUMNS = "$BASE_URL/ext-sql-fk-columns"
-    const val EXT_SQL_UNIQUE = "$BASE_URL/ext-sql-unique"
-    const val EXT_PRECISION  = "$BASE_URL/ext-sql-precision"
+    const val BASE_URL = "https://interop.aphp.fr/fhir/StructureDefinition"
   }
 
   /**
@@ -195,24 +190,15 @@ class StructureDefinitionMapper {
     }
     sd.differential.addElement(rootEl)
 
-    // Un ElementDefinition par colonne, contexte pré-calculé en une passe
+    // Un ou plusieurs ElementDefinition par colonne (BackboneElement + enfants si la colonne
+    // porte au moins un fait), contexte pré-calculé en une passe
     buildColumnContexts(table).forEach { context ->
-      sd.differential.addElement(buildElement(context, sdName))
+      buildColumnElements(context, sdName).forEach { sd.differential.addElement(it) }
     }
     return sd
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Une FK à laquelle participe une colonne locale donnée, avec la colonne cible qui lui
-   * correspond *positionnellement* (voir ticket #10 : `localColumns[i]` ↔ `targetColumns[i]`,
-   * pas le produit cartésien des deux listes).
-   */
-  private data class ColumnForeignKey(
-    val fk: SqlForeignKey,
-    val targetColumn: String,
-  )
 
   /** Tous les faits d'une colonne (cardinalité, PK, FK, unique) résolus en une seule passe sur [SqlTable]. */
   private data class ColumnContext(
@@ -220,7 +206,7 @@ class StructureDefinitionMapper {
     val min: Int,
     val max: String,
     val isPrimaryKey: Boolean,
-    val foreignKeys: List<ColumnForeignKey>,
+    val foreignKeys: List<SqlForeignKey>,
     val uniqueKey: SqlUniqueKey?,
   )
 
@@ -232,96 +218,118 @@ class StructureDefinitionMapper {
         min          = if (forcedNotNull || !column.nullable) 1 else 0,
         max          = "1",
         isPrimaryKey = column.name in table.primaryKeyColumns,
-        foreignKeys  = table.foreignKeys.mapNotNull { fk ->
-          val index = fk.localColumns.indexOf(column.name)
-          if (index < 0) null else ColumnForeignKey(fk, fk.targetColumns[index])
-        },
+        // La colonne cible positionnellement correspondante (voir ticket #10) n'est plus portée
+        // ici : depuis la migration BackboneElement (#20/#21), `.fkN.targetColumn` est déclaré
+        // sans valeur fixée (cf. `docs/backbone-element-migration-spec.md`), donc plus lue.
+        foreignKeys  = table.foreignKeys.filter { column.name in it.localColumns },
         uniqueKey    = table.uniqueKeys.firstOrNull { column.name in it.columns },
       )
     }
 
-  private fun buildElement(context: ColumnContext, parentPath: String): ElementDefinition {
+  /**
+   * Un ou plusieurs [ElementDefinition] pour une colonne : un seul élément primitif si elle ne
+   * porte aucun fait structurel, sinon un wrapper `BackboneElement` suivi de ses enfants (dans
+   * l'ordre `.value`, `.isPrimaryKey`, `.uniqueKeyName`, `.precision`, `.scale`, `.fkN.*` — voir
+   * `docs/backbone-element-migration-spec.md`, résolutions #20/#21 de la carte wayfinder #18).
+   */
+  private fun buildColumnElements(context: ColumnContext, parentPath: String): List<ElementDefinition> {
     val column = context.column
     val elementPath = "$parentPath.${column.name.toCamelCase()}"
+    val hasFacts = context.isPrimaryKey ||
+      context.foreignKeys.isNotEmpty() ||
+      context.uniqueKey != null ||
+      column.precision > 0
 
+    if (!hasFacts) return listOf(buildPrimitiveElement(context, elementPath))
+
+    val elements = mutableListOf<ElementDefinition>()
+
+    elements += ElementDefinition().apply {
+      id   = elementPath
+      path = elementPath
+      min  = context.min
+      max  = context.max
+      addType(TypeRefComponent().apply { code = "BackboneElement" })
+    }
+
+    // `.value` porte la valeur scalaire d'origine, sous la même forme qu'un élément primitif non
+    // enveloppé — omis sur une colonne FK, dont le(s) `.fkN.reference` jouent déjà ce rôle
+    // (cf. résolution #21).
+    if (context.foreignKeys.isEmpty()) {
+      elements += buildPrimitiveElement(context, "$elementPath.value")
+    }
+
+    if (context.isPrimaryKey) {
+      elements += leafElement("$elementPath.isPrimaryKey", 1, "1", "boolean", "Primary key member")
+    }
+
+    context.uniqueKey?.let {
+      elements += leafElement("$elementPath.uniqueKeyName", 1, "1", "string", "Unique key name")
+    }
+
+    if (column.precision > 0) {
+      elements += leafElement("$elementPath.precision", 1, "1", "integer", "Numeric precision")
+    }
+
+    if (column.scale > 0) {
+      elements += leafElement("$elementPath.scale", 0, "1", "integer", "Numeric scale")
+    }
+
+    context.foreignKeys.forEachIndexed { index, fk ->
+      val fkPath = "$elementPath.fk${index + 1}"
+      val targetSdName = fk.targetTable.toPascalCase()
+
+      elements += ElementDefinition().apply {
+        id    = fkPath
+        path  = fkPath
+        min   = 1
+        max   = "1"
+        addType(TypeRefComponent().apply { code = "BackboneElement" })
+        short = "Foreign key to $targetSdName"
+      }
+      elements += ElementDefinition().apply {
+        id   = "$fkPath.reference"
+        path = "$fkPath.reference"
+        min  = 1
+        max  = "1"
+        addType(TypeRefComponent().apply {
+          code = "Reference"
+          addTargetProfile(targetSdName)
+        })
+      }
+      elements += leafElement("$fkPath.targetColumn", 1, "1", "string", null)
+    }
+
+    return elements
+  }
+
+  private fun buildPrimitiveElement(context: ColumnContext, elementPath: String): ElementDefinition {
+    val column = context.column
     return ElementDefinition().apply {
       id   = elementPath
       path = elementPath
       min  = context.min
       max  = context.max
-
-      // ── Type : une Reference vers la SD cible par FK à laquelle la colonne participe,
-      //    sinon type FHIR primitif si la colonne n'est dans aucune FK ──
-      if (context.foreignKeys.isNotEmpty()) {
-        context.foreignKeys.forEach { columnFk -> addType(buildFkTypeRef(columnFk.fk)) }
-      } else {
-        addType(TypeRefComponent().apply {
-          code = sqlTypeToFhirType(column.sqlType)
-        })
-      }
-
+      addType(TypeRefComponent().apply { code = sqlTypeToFhirType(column.sqlType) })
       column.comment?.let { short = it }
-
-      column.length.takeIf { it > 0 }?.let { len ->
-        maxLengthElement = IntegerType(len)
-      }
-
-      column.precision.takeIf { it > 0 }?.let { precision ->
-        addExtension(Extension().apply {
-          url = EXT_PRECISION
-          setValue(StringType("($precision${if (column.scale > 0) ",${column.scale}" else ""})"))
-        })
-      }
-
-      if (context.isPrimaryKey) {
-        addExtension(Extension().apply {
-          url = EXT_IS_PK
-          setValue(BooleanType("true"))
-        })
-      }
-
-      context.foreignKeys.forEach { columnFk -> addExtension(buildFkColumnsExtension(columnFk)) }
-
-      if (context.uniqueKey != null) {
-        addExtension(Extension().apply {
-          url = EXT_SQL_UNIQUE
-          setValue(StringType("${uniqueKeyName(context.uniqueKey)} [UNIQUE]"))
-        })
-      }
+      column.length.takeIf { it > 0 }?.let { len -> maxLengthElement = IntegerType(len) }
     }
   }
+
+  private fun leafElement(path: String, min: Int, max: String, typeCode: String, short: String?): ElementDefinition =
+    ElementDefinition().apply {
+      id   = path
+      this.path = path
+      this.min  = min
+      this.max  = max
+      addType(TypeRefComponent().apply { code = typeCode })
+      short?.let { this.short = it }
+    }
 
   /** Nom d'une UNIQUE (verbatim si nommée), ou repli basé sur ses colonnes si anonyme (ex. code -> uq-code). */
   private fun uniqueKeyName(uniqueKey: SqlUniqueKey): String =
     uniqueKey.name
       ?: "uq-" + uniqueKey.columns.joinToString("-") { it.toKebabCase() }
-
-  /**
-   * Construit le [TypeRefComponent] Reference pointant vers la SD cible de la FK.
-   *
-   * Exemple : FK vers `OS_KERN.PATIENT` → `Reference(OsKernPatient)`
-   */
-  private fun buildFkTypeRef(fk: SqlForeignKey): TypeRefComponent {
-    val targetSdName = fk.targetTable.toPascalCase()
-    return TypeRefComponent().apply {
-      code = "Reference"
-      addTargetProfile(targetSdName)
-    }
-  }
-
-  /**
-   * Construit l'extension [EXT_FK_COLUMNS] pour une FK à laquelle participe la colonne locale :
-   * une seule sous-extension `targetColumn`, la colonne cible positionnellement correspondante
-   * (voir ticket #10 — pas le produit cartésien de toutes les colonnes cibles de la FK).
-   */
-  private fun buildFkColumnsExtension(columnFk: ColumnForeignKey): Extension =
-    Extension().apply {
-      url = EXT_FK_COLUMNS
-      addExtension(Extension().apply {
-        url = "targetColumn"
-        setValue(StringType(columnFk.targetColumn.toCamelCase()))
-      })
-    }
 
   // ─────────────────────────────────────────────────────────────────────────
 

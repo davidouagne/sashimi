@@ -217,7 +217,12 @@ class StructureDefinitionMapperTest {
     }
 
     @Test
-    fun `distinct UNIQUE keys do not collide and each column keeps its own resolved name`() {
+    fun `distinct UNIQUE keys do not collide and each column gets its own uniqueKeyName child`() {
+        // La résolution du nom (uq-code vs uq-a-b) n'est plus portée par le FSH généré depuis la
+        // migration extensions -> BackboneElement (#20/#21) : seule la présence du fait "membre
+        // d'une UNIQUE" reste observable côté ElementDefinition, sous forme d'un enfant
+        // ".uniqueKeyName" déclaré à côté du wrapper. La collision de *nom résolu* elle-même reste
+        // détectée plus tôt, côté validation (voir les tests dédiés ci-dessus).
         val table = tableWithUniqueKeys(
             SqlUniqueKey(name = null, columns = listOf("CODE")),
             SqlUniqueKey(name = null, columns = listOf("A", "B")),
@@ -225,10 +230,15 @@ class StructureDefinitionMapperTest {
 
         val result = mapper.map(listOf(table))
         assertTrue(result.failures.isEmpty())
-        val elements = result.successes.single().differential.element
-        val uniqueValues = elements
-            .mapNotNull { el -> el.extension.find { it.url == StructureDefinitionMapper.EXT_SQL_UNIQUE } }
-            .map { (it.value as org.hl7.fhir.r4.model.StringType).value }
-        assertEquals(listOf("uq-code [UNIQUE]", "uq-a-b [UNIQUE]", "uq-a-b [UNIQUE]"), uniqueValues)
+        val elementIds = result.successes.single().differential.element.map { it.id }
+        assertEquals(
+            listOf(
+                "T",
+                "T.code", "T.code.value", "T.code.uniqueKeyName",
+                "T.a", "T.a.value", "T.a.uniqueKeyName",
+                "T.b", "T.b.value", "T.b.uniqueKeyName",
+            ),
+            elementIds,
+        )
     }
 }

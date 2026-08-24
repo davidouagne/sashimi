@@ -8,9 +8,9 @@ Title: "ENCOUNTER"
 Characteristics: #can-be-target
 
 
-* id 1..1 uuid ""
-* id ^extension[+].url = "https://interop.aphp.fr/fhir/StructureDefinition/ext-sql-is-pk"
-* id ^extension[=].valueBoolean = true
+* id 1..1 BackboneElement ""
+* id.value 1..1 uuid ""
+* id.isPrimaryKey 1..1 boolean "Primary key member"
 * patientId 1..1 uuid ""
 * encounterDate 1..1 dateTime ""
 * dischargeDate 0..1 dateTime ""

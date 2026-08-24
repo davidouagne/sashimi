@@ -8,9 +8,9 @@ Title: "PATIENT_RECORD"
 Characteristics: #can-be-target
 
 
-* id 1..1 uuid ""
-* id ^extension[+].url = "https://interop.aphp.fr/fhir/StructureDefinition/ext-sql-is-pk"
-* id ^extension[=].valueBoolean = true
+* id 1..1 BackboneElement ""
+* id.value 1..1 uuid ""
+* id.isPrimaryKey 1..1 boolean "Primary key member"
 * ipp 1..1 string ""
 * ipp ^maxLength = 20
 * lastName 1..1 string ""

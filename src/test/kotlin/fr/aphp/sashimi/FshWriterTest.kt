@@ -100,19 +100,27 @@ class FshWriterTest {
         ).map { (sqlType, fhirType) ->
             dynamicTest("$sqlType → $fhirType") {
                 val fsh = fsh("CREATE TABLE t (col $sqlType NOT NULL);")
-                assertContains(fsh, "* col 1..1 $fhirType")
+                // Sans wrapper (colonne sans fait) ou sous ".value" (ex. INT/INTEGER/BIGINT, dont le
+                // type jOOQ par défaut porte une précision non nulle même sans clause explicite dans
+                // le DDL — la colonne est alors enveloppée, comme `a`/`b` dans la fixture
+                // anonymous-constraints).
+                assertTrue(
+                    fsh.contains("* col 1..1 $fhirType") || fsh.contains("* col.value 1..1 $fhirType"),
+                    "FSH devrait mapper $sqlType vers $fhirType (avec ou sans wrapper BackboneElement)\n\nFSH produit :\n$fsh",
+                )
             }
         }
 
         @Test
-        fun `colonne UUID primaire produit type uuid`() {
+        fun `colonne UUID primaire produit type uuid sous value`() {
             val fsh = fsh("""
                 CREATE TABLE t (
                     id UUID NOT NULL,
                     CONSTRAINT pk_t PRIMARY KEY (id)
                 );
             """)
-            assertContains(fsh, "* id 1..1 uuid")
+            // PK -> colonne enveloppée : le type SQL d'origine migre sur l'enfant ".value".
+            assertContains(fsh, "* id 1..1 BackboneElement", "* id.value 1..1 uuid")
         }
     }
 
@@ -129,13 +137,12 @@ class FshWriterTest {
         """
 
         @Test
-        fun `extension IS_PK emise sur la colonne PK`() {
-            assertContains(fsh(ddl),
-                "https://interop.aphp.fr/fhir/StructureDefinition/ext-sql-is-pk", "valueBoolean = true")
+        fun `colonne PK enveloppee en BackboneElement avec enfant isPrimaryKey`() {
+            assertContains(fsh(ddl), "* id 1..1 BackboneElement", "* id.isPrimaryKey 1..1 boolean")
         }
 
         @Test
-        fun `extension IS_PK absente sur les colonnes non-PK`() {
+        fun `isPrimaryKey absent sur les colonnes non-PK`() {
             val fsh = fsh("""
                 CREATE TABLE t (
                     id   UUID NOT NULL,
@@ -143,10 +150,11 @@ class FshWriterTest {
                     CONSTRAINT pk_t PRIMARY KEY (id)
                 );
             """)
-            // ext-sql-is-pk ne doit apparaître qu'une fois (pour id)
+            // isPrimaryKey ne doit apparaître qu'une fois (pour id) ; name reste un élément primitif.
             assertEquals(1,
-                fsh.lines().count { it.contains("ext-sql-is-pk") },
-                "ext-sql-is-pk doit apparaître exactement une fois")
+                fsh.lines().count { it.contains("isPrimaryKey") },
+                "isPrimaryKey doit apparaître exactement une fois")
+            assertContains(fsh, "* name 1..1 string")
         }
 
         @Test
@@ -158,8 +166,8 @@ class FshWriterTest {
                     CONSTRAINT pk_t PRIMARY KEY (col_a, col_b)
                 );
             """)
-            assertEquals(2, fsh.lines().count { it.contains("ext-sql-is-pk") },
-                "PK composite : ext-sql-is-pk attendu sur 2 colonnes")
+            assertEquals(2, fsh.lines().count { it.contains("isPrimaryKey") },
+                "PK composite : isPrimaryKey attendu sur 2 colonnes")
         }
     }
 
@@ -183,13 +191,12 @@ class FshWriterTest {
         }
 
         @Test
-        fun `extension FK_COLUMNS emise`() {
-            assertContains(fsh(ddl), "ext-sql-fk-columns")
-        }
-
-        @Test
-        fun `targetColumn correctement renseigne`() {
-            assertContains(fsh(ddl), "targetColumn", "\"id\"")
+        fun `groupe fk1 emis avec reference et targetColumn`() {
+            assertContains(fsh(ddl),
+                "* patientId 0..1 BackboneElement",
+                "* patientId.fk1 1..1 BackboneElement",
+                "* patientId.fk1.reference 1..1 Reference(",
+                "* patientId.fk1.targetColumn 1..1 string")
         }
 
         @Test
@@ -253,14 +260,14 @@ class FshWriterTest {
     inner class ContrainteUnique {
 
         @Test
-        fun `extension SQL_UNIQUE emise sur colonne UNIQUE`() {
+        fun `colonne UNIQUE enveloppee en BackboneElement avec enfant uniqueKeyName`() {
             val fsh = fsh("""
                 CREATE TABLE t (
                     code TEXT NOT NULL,
                     CONSTRAINT uq_code UNIQUE (code)
                 );
             """)
-            assertContains(fsh, "https://interop.aphp.fr/fhir/StructureDefinition/ext-sql-unique")
+            assertContains(fsh, "* code 1..1 BackboneElement", "* code.uniqueKeyName 1..1 string")
         }
     }
 
@@ -288,7 +295,7 @@ class FshWriterTest {
                 "* startDate 1..1 dateTime",
                 "* note 0..1 string",
                 "* obeys chk-note",
-                "ext-sql-is-pk",
+                "isPrimaryKey",
             )
         }
 

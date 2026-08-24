@@ -1,6 +1,6 @@
 # Spec: extensions → BackboneElement for kind=logical StructureDefinitions
 
-Consolidated deliverable of [wayfinder map #18](https://github.com/davidouagne/sashimi/issues/18). This document is the map's spec output: it is **not implemented** — `StructureDefinitionMapper.kt` still emits the extension-based form described below as "Before" on every branch except this one. A separate implementation effort consumes this spec, regenerates the six golden fixtures, and updates the live `CONTEXT.md` on `main` to match (this branch's `CONTEXT.md` shows the target state — see that file on this branch for the drafted glossary update).
+Consolidated deliverable of [wayfinder map #18](https://github.com/davidouagne/sashimi/issues/18). `StructureDefinitionMapper.kt` implements the rule below; the "Before" sections describe the extension-based form it replaced. All six golden fixtures were regenerated to the "After" shape described here, and `CONTEXT.md` was updated to match.
 
 ## Decisions consolidated
 
@@ -23,7 +23,9 @@ When wrapped, the children present are the union of whichever facts apply — ev
 | Numeric scale | `.scale` | `integer` | Only if `scale > 0` |
 | Foreign Key *N* | `.fkN.reference` + `.fkN.targetColumn` | `Reference(Target)` + `string` | Once per distinct FK the column participates in, always indexed from `fk1` |
 
-The wrapper's own cardinality is the column's original min/max; `.value` is always `1..1`; each `.fkN` group is always `1..1`. `^maxLength` and the column's own `short`/definition text (from `column.comment`) move to `.value` when present — they have no home on an FK-only column (no `.value`), so they are dropped there (see #21: already semantically questionable on a `Reference`-typed element today).
+The wrapper's own cardinality is the column's original min/max; `.value`, when present, inherits that same min/max (see `code`/`stornoDatum`/`relativefallnr` below — all `0..1` wrapper *and* `0..1` `.value`); `.isPrimaryKey`/`.uniqueKeyName`/`.precision`/`.fkN.*` are always `1..1` when present, `.scale` is `0..1` when present. `^maxLength` and the column's own `short`/definition text (from `column.comment`) move to `.value` when present — they have no home on an FK-only column (no `.value`), so they are dropped there (see #21: already semantically questionable on a `Reference`-typed element today).
+
+None of the Backbone Element children carry a fixed/pattern value (no FSH Assignment Rule, no `^fixed[x]`) — they are declared (type + cardinality + short text) the same way for every column sharing a fact, e.g. `.uniqueKeyName` always reads `"Unique key name"` regardless of the actual resolved constraint name. A conforming instance is expected to supply the real value on every row (see the ADR's "Schema fact → per-instance data field" consequence).
 
 No composition case is special-cased beyond this table — a column with PK + UNIQUE + precision (see `fallid` below) gets all three fact children as siblings, exactly like a column with only one fact would get just that one.
 
