@@ -1,10 +1,10 @@
 package fr.aphp.sashimi.parser
 
 /**
- * Modèle de domaine du seam parser/mapper (voir carte wayfinder #1, ticket #3) :
- * ce que [SqlTableParser] construit à partir du DDL, entièrement résolu — le
- * mapper ne dépend plus jamais de `org.jooq.impl.QOM.*`. Vocabulaire détaillé
- * dans `CONTEXT.md` (SQL Table, SQL Column, Not-Null-Forcing Column…).
+ * Domain model for the parser/mapper seam (see wayfinder map #1, ticket #3):
+ * what [SqlTableParser] builds from the DDL, fully resolved — the mapper never
+ * depends on `org.jooq.impl.QOM.*` again. Detailed vocabulary in `CONTEXT.md`
+ * (SQL Table, SQL Column, Not-Null-Forcing Column…).
  */
 data class SqlTable(
     val name: String,
@@ -17,7 +17,7 @@ data class SqlTable(
     val notNullColumns: Set<String>,
 )
 
-/** Fait DDL pur : [nullable] n'est jamais fusionné avec [SqlTable.notNullColumns] ici. */
+/** Pure DDL fact: [nullable] is never merged with [SqlTable.notNullColumns] here. */
 data class SqlColumn(
     val name: String,
     val sqlType: String,
@@ -40,9 +40,9 @@ data class SqlUniqueKey(
 )
 
 /**
- * [conditionText] est le rendu jOOQ dialecte-fidèle brut de la condition CHECK
- * (avant normalisation FSH — whitespace/parenthèses/camelCase, faite par
- * [fr.aphp.sashimi.mapper.InvariantText] côté mapper).
+ * [conditionText] is the raw, dialect-faithful jOOQ rendering of the CHECK
+ * condition (before FSH normalization — whitespace/parentheses/camelCase,
+ * done by [fr.aphp.sashimi.mapper.InvariantText] on the mapper side).
  */
 data class SqlCheckConstraint(
     val name: String?,

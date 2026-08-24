@@ -13,103 +13,114 @@ import java.util.concurrent.Callable
 
 @QuarkusMain
 class SashimiMain : QuarkusApplication {
-  @Inject
-  lateinit var factory: CommandLine.IFactory
+    @Inject
+    lateinit var factory: CommandLine.IFactory
 
-  override fun run(vararg args: String): Int {
-    return CommandLine(SashimiCommand::class.java, factory).execute(*args)
-  }
+    override fun run(vararg args: String): Int = CommandLine(SashimiCommand::class.java, factory).execute(*args)
 }
 
-// Commande racine
+// Root command
 @CommandLine.Command(
-  name = "sashimi",
-  mixinStandardHelpOptions = true,
-  version = ["1.0.0"],
-  subcommands = [TranscribeCommand::class]
+    name = "sashimi",
+    mixinStandardHelpOptions = true,
+    version = ["1.0.0"],
+    subcommands = [TranscribeCommand::class],
 )
 class SashimiCommand
 
 @CommandLine.Command(name = "transcribe", description = ["Transcribe a SQL DDL file into FHIR StructureDefinitions in FSH format."])
 class TranscribeCommand : Callable<Int> {
+    private val log = LoggerFactory.getLogger(TranscribeCommand::class.java)
 
-  private val log = LoggerFactory.getLogger(TranscribeCommand::class.java)
+    @CommandLine.Option(
+        names = ["-i", "--input"],
+        required = true,
+        description = ["SQL DDL input file to transcribe (CREATE TABLE statements)"],
+    )
+    lateinit var input: File
 
-  @CommandLine.Option(names = ["-i", "--input"],
-    required = true,
-    description = ["SQL DDL input file to transcribe (CREATE TABLE statements)"])
-  lateinit var input: File
+    @CommandLine.Option(
+        names = ["-o", "--output"],
+        description = ["Output directory for generated .fsh files (default: current directory)"],
+        defaultValue = "",
+    )
+    lateinit var output: String
 
-  @CommandLine.Option(names = ["-o", "--output"],
-    description = ["Output directory for generated .fsh files (default: current directory)"],
-    defaultValue = "")
-  lateinit var output: String
+    @CommandLine.Option(
+        names = ["--dialect"],
+        description = ["SQL dialect for DDL parsing: POSTGRES | MYSQL | DEFAULT"],
+        defaultValue = "DEFAULT",
+    )
+    lateinit var dialect: String
 
-  @CommandLine.Option(names = ["--dialect"],
-    description = ["SQL dialect for DDL parsing: POSTGRES | MYSQL | DEFAULT"],
-    defaultValue = "DEFAULT")
-  lateinit var dialect: String
+    @CommandLine.Option(
+        names = ["-h", "--help", "-?", "-help"],
+        usageHelp = true,
+        description = [
+            "Usage: sashimi transcribe [OPTIONS]\n" +
+                "\n" +
+                "  Transcribe a SQL DDL file into FHIR StructureDefinitions in FSH format.\n" +
+                "  Parses CREATE TABLE statements and maps columns and foreign\n" +
+                "  keys to FHIR element definitions.\n" +
+                "\n" +
+                "Options:\n" +
+                "  -i, --input FILE                SQL DDL input file to transcribe\n" +
+                "                                  (CREATE TABLE statements).  [required]\n" +
+                "  -o, --output DIR                Output directory for generated .fsh files.\n" +
+                "                                  [default: current directory]\n" +
+                "  --dialect DIALECT               SQL dialect for DDL parsing.\n" +
+                "                                  Supported values: POSTGRES | MYSQL | DEFAULT.\n" +
+                "                                  [default: DEFAULT]\n" +
+                "  -h, --help, -?, -help           Show this message and exit.\n" +
+                "\n" +
+                "Examples:\n" +
+                "  sashimi transcribe -i schema.sql\n" +
+                "  sashimi transcribe -i schema.sql -o src/main/fsh --dialect POSTGRES\n",
+        ],
+    )
+    var help: Boolean = false
 
-  @CommandLine.Option(names = ["-h", "--help", "-?", "-help"], usageHelp = true, description = [
-    "Usage: sashimi transcribe [OPTIONS]\n" +
-      "\n" +
-      "  Transcribe a SQL DDL file into FHIR StructureDefinitions in FSH format.\n" +
-      "  Parses CREATE TABLE statements and maps columns and foreign\n" +
-      "  keys to FHIR element definitions.\n" +
-      "\n" +
-      "Options:\n" +
-      "  -i, --input FILE                SQL DDL input file to transcribe\n" +
-      "                                  (CREATE TABLE statements).  [required]\n" +
-      "  -o, --output DIR                Output directory for generated .fsh files.\n" +
-      "                                  [default: current directory]\n" +
-      "  --dialect DIALECT               SQL dialect for DDL parsing.\n" +
-      "                                  Supported values: POSTGRES | MYSQL | DEFAULT.\n" +
-      "                                  [default: DEFAULT]\n" +
-      "  -h, --help, -?, -help           Show this message and exit.\n" +
-      "\n" +
-      "Examples:\n" +
-      "  sashimi transcribe -i schema.sql\n" +
-      "  sashimi transcribe -i schema.sql -o src/main/fsh --dialect POSTGRES\n"
-  ])
-  var help: Boolean = false
+    @Inject lateinit var sqlTableParser: SqlTableParser
 
-  @Inject lateinit var sqlTableParser: SqlTableParser        // jOOQ
-  @Inject lateinit var structureDefinitionMapper: StructureDefinitionMapper
-  @Inject lateinit var fshWriter: FshWriter           // ton writer existant
+    // jOOQ
+    @Inject lateinit var structureDefinitionMapper: StructureDefinitionMapper
 
-  override fun call(): Int {
-    if (!input.exists()) {
-      log.error("Fichier introuvable : $input")
-      return 1
+    @Inject lateinit var fshWriter: FshWriter
+
+    override fun call(): Int {
+        if (!input.exists()) {
+            log.error("File not found: $input")
+            return 1
+        }
+
+        log.info("Parsing SQL: $input (dialect=$dialect)")
+        val tables = sqlTableParser.parse(input.readText(), dialect)
+        log.info("${tables.size} table(s) detected")
+
+        val result = structureDefinitionMapper.map(tables)
+
+        result.failures.forEach { failure ->
+            log.error("Table '${failure.tableName}' skipped: ${failure.exception.message ?: failure.exception.toString()}")
+        }
+
+        if (result.successes.isEmpty()) {
+            log.error("No StructureDefinition generated from $input")
+            return 1
+        }
+
+        val outputDir =
+            output.ifEmpty {
+                input.absoluteFile.parentFile.absolutePath // absoluteFile resolves the relative path first
+            }
+
+        result.successes.forEach { sd ->
+            val fsh = fshWriter.write(sd)
+
+            val outputFile = "${outputDir + File.separator}StructureDefinition-${sd.id}.fsh"
+            File(outputFile).writeText(fsh)
+            log.info("FSH generated: $outputFile")
+        }
+
+        return if (result.failures.isEmpty()) 0 else 1
     }
-
-    log.info("Parsing SQL : $input (dialect=$dialect)")
-    val tables = sqlTableParser.parse(input.readText(), dialect)
-    log.info("${tables.size} table(s) détectée(s)")
-
-    val result = structureDefinitionMapper.map(tables)
-
-    result.failures.forEach { failure ->
-      log.error("Table '${failure.tableName}' ignorée : ${failure.exception.message ?: failure.exception.toString()}")
-    }
-
-    if (result.successes.isEmpty()) {
-      log.error("Aucun StructureDefinition généré à partir de $input")
-      return 1
-    }
-
-    val outputDir = output.ifEmpty {
-      input.absoluteFile.parentFile.absolutePath  // absoluteFile résout le chemin relatif d'abord
-    }
-
-    result.successes.forEach { sd ->
-      val fsh = fshWriter.write(sd)
-
-      val outputFile = "${outputDir + File.separator}StructureDefinition-${sd.id}.fsh"
-      File(outputFile).writeText(fsh)
-      log.info("FSH généré : $outputFile")
-    }
-
-    return if (result.failures.isEmpty()) 0 else 1
-  }
 }

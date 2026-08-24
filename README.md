@@ -1,34 +1,34 @@
 # Sashimi
 
-Outil CLI Kotlin/Quarkus qui parse un fichier SQL DDL et génère des **Logical Models FSH** (FHIR Shorthand).
+Kotlin/Quarkus CLI tool that parses a SQL DDL file and generates **FSH Logical Models** (FHIR Shorthand).
 
 ## Stack
 
-| Couche       | Librairie                                   |
+| Layer        | Library                                     |
 |--------------|---------------------------------------------|
 | CLI / Runner | Quarkus (`QuarkusApplication` + Picocli)    |
-| Parsing SQL  | jOOQ `DSLContext.parser()`                  |
-| Modèle FHIR  | HAPI FHIR R4 `StructureDefinition`          |
-| Sortie       | FSH (FHIR Shorthand) sérialisé manuellement |
+| SQL parsing  | jOOQ `DSLContext.parser()`                  |
+| FHIR model   | HAPI FHIR R4 `StructureDefinition`          |
+| Output       | FSH (FHIR Shorthand), serialized manually   |
 
 ## Architecture
 
 ```
 src/main/kotlin/fr/aphp/sashimi/
-├── SashimiMain.kt                    # Point d'entrée Quarkus + commandes Picocli (SashimiCommand, TranscribeCommand)
-├── FhirExtensions.kt                 # URLs d'extension FHIR partagées (EXT_CHARACTERISTICS)
+├── SashimiMain.kt                    # Quarkus entry point + Picocli commands (SashimiCommand, TranscribeCommand)
+├── FhirExtensions.kt                 # Shared FHIR extension URLs (EXT_CHARACTERISTICS)
 ├── parser/
-│   ├── SqlTable.kt                   # Modèle de domaine : SqlTable, SqlColumn, SqlForeignKey…
+│   ├── SqlTable.kt                   # Domain model: SqlTable, SqlColumn, SqlForeignKey…
 │   └── SqlTableParser.kt             # jOOQ DDL parser → List<SqlTable>
 ├── mapper/
-│   ├── StructureDefinitionMapper.kt  # SqlTable → StructureDefinition HAPI
-│   ├── InvariantText.kt              # Texte brut d'une condition CHECK → texte d'invariant FSH
+│   ├── StructureDefinitionMapper.kt  # SqlTable → HAPI StructureDefinition
+│   ├── InvariantText.kt              # Raw CHECK condition text → FSH invariant text
 │   └── NamingConventions.kt          # snake_case → PascalCase/camelCase/kebab-case
 └── writer/
-    └── FshWriter.kt                  # StructureDefinition → texte FSH
+    └── FshWriter.kt                  # StructureDefinition → FSH text
 ```
 
-Le glossaire du domaine (SQL Table, SQL Column, Logical Model, Invariant…) est dans `CONTEXT.md`.
+The domain glossary (SQL Table, SQL Column, Logical Model, Invariant…) lives in `CONTEXT.md`.
 
 ## Build & Run
 
@@ -36,32 +36,32 @@ Le glossaire du domaine (SQL Table, SQL Column, Logical Model, Invariant…) est
 # Build
 ./gradlew build
 
-# Utilisation (transcribe est la sous-commande, -o est un DOSSIER de sortie
-# qui doit déjà exister)
+# Usage (transcribe is the subcommand, -o is an OUTPUT FOLDER
+# that must already exist)
 mkdir -p output
 java -jar build/sashimi-0.1.0-SNAPSHOT-runner.jar transcribe \
   --input src/test/resources/fixtures/patient-record/input.sql \
   --output output
 ```
 
-`--dialect` change la casse des identifiants non quotés dans la sortie
-(ex. `POSTGRES` les replie en minuscules, `DEFAULT` en majuscules) — les
-fixtures de `src/test/resources/fixtures/` sont toutes générées sans
-`--dialect` (donc `DEFAULT`).
+`--dialect` changes the casing of unquoted identifiers in the output
+(e.g. `POSTGRES` folds them to lowercase, `DEFAULT` to uppercase) — the
+fixtures under `src/test/resources/fixtures/` are all generated without
+`--dialect` (so `DEFAULT`).
 
-### Arguments (sous-commande `transcribe`)
+### Arguments (`transcribe` subcommand)
 
-| Argument        | Obligatoire | Défaut                            | Description                                |
+| Argument        | Required | Default                           | Description                                |
 |------------------|-------------|-----------------------------------|---------------------------------------------|
-| `-i`, `--input`  | ✅           | —                                  | Fichier SQL DDL à transcrire (`CREATE TABLE`) |
-| `-o`, `--output` | ❌           | dossier du fichier d'entrée       | **Dossier** de sortie pour les `.fsh` générés (un par table) |
-| `--dialect`      | ❌           | `DEFAULT`                          | Dialecte jOOQ pour le parsing : `POSTGRES`, `MYSQL`, `DEFAULT` |
+| `-i`, `--input`  | ✅           | —                                  | SQL DDL file to transcribe (`CREATE TABLE`) |
+| `-o`, `--output` | ❌           | the input file's folder           | **Folder** where the generated `.fsh` files are written (one per table) |
+| `--dialect`      | ❌           | `DEFAULT`                          | jOOQ dialect for parsing: `POSTGRES`, `MYSQL`, `DEFAULT` |
 
-Un fichier `StructureDefinition-<id>.fsh` est écrit par table trouvée dans le DDL.
+One `StructureDefinition-<id>.fsh` file is written per table found in the DDL.
 
-## Exemple de sortie FSH
+## Example FSH output
 
-D'après `src/test/resources/fixtures/patient-record/input.sql` :
+From `src/test/resources/fixtures/patient-record/input.sql`:
 
 ```fsh
 Logical: PatientRecord
@@ -93,15 +93,19 @@ Characteristics: #can-be-target
 ./gradlew test
 ```
 
-`PipelineFixtureTest` fait tourner le pipeline complet sur chaque cas de
-`src/test/resources/fixtures/<cas>/` (`input.sql` + `expected.fsh` de
-référence) et compare le FSH produit par égalité stricte. Ces fixtures
-sont aussi les exemples de référence du projet — voir
-`src/test/resources/fixtures/patient-record/` pour un cas simple, ou
-`os-kern-fall/` / `os-mup-messungen/` pour des schémas réels avec clés
-étrangères et contraintes CHECK.
+`PipelineFixtureTest` runs the full pipeline on each case under
+`src/test/resources/fixtures/<case>/` (`input.sql` + a reference
+`expected.fsh`) and compares the produced FSH by strict equality. These
+fixtures are also the project's reference examples — see
+`src/test/resources/fixtures/patient-record/` for a simple case, or
+`os-kern-fall/` / `os-mup-messungen/` for real-world schemas with foreign
+keys and CHECK constraints.
 
-## Prochaines étapes
+## Next steps
 
-- [ ] Intégration SUSHI pour valider le FSH généré
-- [ ] Export optionnel en JSON (`StructureDefinition` sérialisé par HAPI)
+- [ ] SUSHI integration to validate the generated FSH
+- [ ] Optional JSON export (`StructureDefinition` serialized by HAPI)
+
+## License
+
+MIT — see [LICENSE.md](LICENSE.md).

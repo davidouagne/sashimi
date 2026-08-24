@@ -9,8 +9,11 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
 class SashimiMainTest {
-
-    private fun newCommand(input: File, output: String = "", dialect: String = "DEFAULT"): TranscribeCommand {
+    private fun newCommand(
+        input: File,
+        output: String = "",
+        dialect: String = "DEFAULT",
+    ): TranscribeCommand {
         val command = TranscribeCommand()
         command.sqlTableParser = SqlTableParser()
         command.structureDefinitionMapper = StructureDefinitionMapper()
@@ -21,16 +24,19 @@ class SashimiMainTest {
         return command
     }
 
-    private val simpleDdl = """
+    private val simpleDdl =
+        """
         CREATE TABLE patient_record (
             id         UUID        NOT NULL,
             last_name  VARCHAR(255) NOT NULL,
             CONSTRAINT pk_patient PRIMARY KEY (id)
         );
-    """.trimIndent()
+        """.trimIndent()
 
     @Test
-    fun `returns non-zero exit code when input file is missing`(@TempDir tempDir: File) {
+    fun `returns non-zero exit code when input file is missing`(
+        @TempDir tempDir: File,
+    ) {
         val missing = File(tempDir, "does-not-exist.sql")
 
         val exitCode = newCommand(missing).call()
@@ -39,7 +45,9 @@ class SashimiMainTest {
     }
 
     @Test
-    fun `returns non-zero exit code when no StructureDefinition is produced`(@TempDir tempDir: File) {
+    fun `returns non-zero exit code when no StructureDefinition is produced`(
+        @TempDir tempDir: File,
+    ) {
         val emptyDdl = File(tempDir, "empty.sql").apply { writeText("-- no CREATE TABLE here\n") }
 
         val exitCode = newCommand(emptyDdl).call()
@@ -48,7 +56,9 @@ class SashimiMainTest {
     }
 
     @Test
-    fun `returns zero and writes to the input file's directory by default`(@TempDir tempDir: File) {
+    fun `returns zero and writes to the input file's directory by default`(
+        @TempDir tempDir: File,
+    ) {
         val input = File(tempDir, "schema.sql").apply { writeText(simpleDdl) }
 
         val exitCode = newCommand(input).call()
@@ -58,14 +68,17 @@ class SashimiMainTest {
     }
 
     @Test
-    fun `returns non-zero exit code and logs cleanly when two CHECK constraints collide`(@TempDir tempDir: File) {
-        val collidingDdl = """
+    fun `returns non-zero exit code and logs cleanly when two CHECK constraints collide`(
+        @TempDir tempDir: File,
+    ) {
+        val collidingDdl =
+            """
             CREATE TABLE t (
                 a INT,
                 CHECK (a > 0),
                 CHECK (a > 0)
             );
-        """.trimIndent()
+            """.trimIndent()
         val input = File(tempDir, "colliding.sql").apply { writeText(collidingDdl) }
 
         val exitCode = newCommand(input).call()
@@ -75,8 +88,11 @@ class SashimiMainTest {
     }
 
     @Test
-    fun `returns non-zero exit code and writes nothing when two tables normalize to the same sdId`(@TempDir tempDir: File) {
-        val collidingDdl = """
+    fun `returns non-zero exit code and writes nothing when two tables normalize to the same sdId`(
+        @TempDir tempDir: File,
+    ) {
+        val collidingDdl =
+            """
             CREATE TABLE os.kern_fall (
                 id UUID NOT NULL,
                 CONSTRAINT pk_a PRIMARY KEY (id)
@@ -85,7 +101,7 @@ class SashimiMainTest {
                 id UUID NOT NULL,
                 CONSTRAINT pk_b PRIMARY KEY (id)
             );
-        """.trimIndent()
+            """.trimIndent()
         val input = File(tempDir, "colliding-sdid.sql").apply { writeText(collidingDdl) }
 
         val exitCode = newCommand(input).call()
@@ -95,15 +111,18 @@ class SashimiMainTest {
     }
 
     @Test
-    fun `returns non-zero exit code when two UNIQUE keys resolve to the same name`(@TempDir tempDir: File) {
-        val collidingDdl = """
+    fun `returns non-zero exit code when two UNIQUE keys resolve to the same name`(
+        @TempDir tempDir: File,
+    ) {
+        val collidingDdl =
+            """
             CREATE TABLE t (
                 code   VARCHAR(10),
                 other  VARCHAR(10),
                 CONSTRAINT "uq-code" UNIQUE (other),
                 UNIQUE (code)
             );
-        """.trimIndent()
+            """.trimIndent()
         val input = File(tempDir, "colliding-unique.sql").apply { writeText(collidingDdl) }
 
         val exitCode = newCommand(input).call()
@@ -113,10 +132,13 @@ class SashimiMainTest {
     }
 
     @Test
-    fun `writes the tables that map cleanly and skips only the one that fails`(@TempDir tempDir: File) {
-        // Cf. ticket #16 : un batch multi-tables n'est plus tout-ou-rien. "bad" a deux CHECK en
-        // collision et est ignorée ; "good" ne dépend pas de "bad" et doit quand même être écrite.
-        val mixedDdl = """
+    fun `writes the tables that map cleanly and skips only the one that fails`(
+        @TempDir tempDir: File,
+    ) {
+        // See ticket #16: a multi-table batch is no longer all-or-nothing. "bad" has two colliding
+        // CHECK constraints and is skipped; "good" does not depend on "bad" and must still be written.
+        val mixedDdl =
+            """
             CREATE TABLE bad (
                 a INT,
                 CHECK (a > 0),
@@ -126,18 +148,20 @@ class SashimiMainTest {
                 id UUID NOT NULL,
                 CONSTRAINT pk_good PRIMARY KEY (id)
             );
-        """.trimIndent()
+            """.trimIndent()
         val input = File(tempDir, "mixed.sql").apply { writeText(mixedDdl) }
 
         val exitCode = newCommand(input).call()
 
-        assertNotEquals(0, exitCode, "Une table en échec doit teinter le code de sortie même si d'autres réussissent")
+        assertNotEquals(0, exitCode, "A failing table must taint the exit code even if others succeed")
         assertFalse(File(tempDir, "StructureDefinition-bad.fsh").exists())
         assertTrue(File(tempDir, "StructureDefinition-good.fsh").exists())
     }
 
     @Test
-    fun `writes to the explicit output directory when provided`(@TempDir tempDir: File) {
+    fun `writes to the explicit output directory when provided`(
+        @TempDir tempDir: File,
+    ) {
         val input = File(tempDir, "schema.sql").apply { writeText(simpleDdl) }
         val outputDir = File(tempDir, "out").apply { mkdirs() }
 

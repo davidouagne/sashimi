@@ -15,385 +15,431 @@ import org.hl7.fhir.r4.model.Extension
 import org.hl7.fhir.r4.model.IntegerType
 import org.hl7.fhir.r4.model.StringType
 import org.hl7.fhir.r4.model.StructureDefinition
-import org.hl7.fhir.r4.model.Type
 import org.hl7.fhir.r4.model.StructureDefinition.StructureDefinitionKind
 import org.hl7.fhir.r4.model.StructureDefinition.TypeDerivationRule
+import org.hl7.fhir.r4.model.Type
 
-/** Base commune aux échecs de validation détectés pendant le mapping (voir #11, #14). */
-abstract class MappingValidationException(message: String) : IllegalStateException(message)
+/** Common base for validation failures detected during mapping (see #11, #14). */
+abstract class MappingValidationException(
+    message: String,
+) : IllegalStateException(message)
 
-/** Levée quand une table SQL produit deux contraintes CHECK dont la clé FHIR résolue est identique. */
-class DuplicateConstraintKeyException(message: String) : MappingValidationException(message)
+/** Thrown when a SQL table produces two CHECK constraints whose resolved FHIR key is identical. */
+class DuplicateConstraintKeyException(
+    message: String,
+) : MappingValidationException(message)
 
-/** Levée quand deux tables SQL d'un même run produisent le même identifiant de StructureDefinition. */
-class DuplicateStructureDefinitionIdException(message: String) : MappingValidationException(message)
+/** Thrown when two SQL tables in the same run produce the same StructureDefinition id. */
+class DuplicateStructureDefinitionIdException(
+    message: String,
+) : MappingValidationException(message)
 
-/** Levée quand une table SQL produit deux Unique Keys dont le nom (nommé ou de repli) résolu est identique. */
-class DuplicateUniqueKeyNameException(message: String) : MappingValidationException(message)
+/** Thrown when a SQL table produces two Unique Keys whose resolved name (explicit or fallback) is identical. */
+class DuplicateUniqueKeyNameException(
+    message: String,
+) : MappingValidationException(message)
 
-/** Une table qui n'a pas pu être mappée : son [SqlTable.name] et la cause de l'échec (voir #16). */
-data class TableMappingFailure(val tableName: String, val exception: MappingValidationException)
+/** A table that could not be mapped: its [SqlTable.name] and the cause of the failure (see #16). */
+data class TableMappingFailure(
+    val tableName: String,
+    val exception: MappingValidationException,
+)
 
 /**
- * Résultat d'un [StructureDefinitionMapper.map] : succès partiel autorisé (#16) — une table en
- * échec n'empêche pas les autres tables du même run d'être mappées et écrites.
+ * Result of a [StructureDefinitionMapper.map] call: partial success is allowed (#16) — a failing
+ * table does not prevent the other tables in the same run from being mapped and written.
  */
-data class MappingResult(val successes: List<StructureDefinition>, val failures: List<TableMappingFailure>)
+data class MappingResult(
+    val successes: List<StructureDefinition>,
+    val failures: List<TableMappingFailure>,
+)
 
 /**
- * Transforme chaque [SqlTable] (déjà entièrement résolu par
- * [fr.aphp.sashimi.parser.SqlTableParser]) en [StructureDefinition] HAPI FHIR R4.
+ * Transforms each [SqlTable] (already fully resolved by
+ * [fr.aphp.sashimi.parser.SqlTableParser]) into a HAPI FHIR R4 [StructureDefinition].
  *
- * | Source DDL        | Cible FHIR                                                          |
- * |-------------------|----------------------------------------------------------------------|
- * | Colonne + type    | ElementDefinition avec type FHIR primitif (colonne sans aucun fait)  |
- * | Colonne + faits   | ElementDefinition BackboneElement, enfants `.value`/`.isPrimaryKey`/`.uniqueKeyName`/`.precision`/`.scale`/`.fkN.*` (voir `docs/backbone-element-migration-spec.md`) |
- * | NOT NULL          | min = 1                                                               |
- * | NULL              | min = 0                                                               |
- * | PRIMARY KEY       | enfant BackboneElement `.isPrimaryKey: boolean`                      |
- * | FOREIGN KEY       | groupe BackboneElement `.fkN.reference: Reference(SD cible)` + `.fkN.targetColumn: string` |
- * | UNIQUE KEY        | enfant BackboneElement `.uniqueKeyName: string`                      |
- * | CHECK IS NOT NULL | renforce la cardinalité min = 1                                      |
- * | Précision/échelle | enfants BackboneElement `.precision: integer` / `.scale: integer`    |
+ * | DDL source          | FHIR target                                                          |
+ * |----------------------|----------------------------------------------------------------------|
+ * | Column + type         | ElementDefinition with a primitive FHIR type (column with no fact)  |
+ * | Column + facts        | BackboneElement ElementDefinition, children `.value`/`.isPrimaryKey`/`.uniqueKeyName`/`.precision`/`.scale`/`.fkN.*` (see `docs/backbone-element-migration-spec.md`) |
+ * | NOT NULL              | min = 1                                                               |
+ * | NULL                  | min = 0                                                               |
+ * | PRIMARY KEY            | BackboneElement child `.isPrimaryKey: boolean`                       |
+ * | FOREIGN KEY            | BackboneElement group `.fkN.reference: Reference(target SD)` + `.fkN.targetColumn: string` |
+ * | UNIQUE KEY             | BackboneElement child `.uniqueKeyName: string`                       |
+ * | CHECK IS NOT NULL      | reinforces cardinality to min = 1                                    |
+ * | Precision/scale        | BackboneElement children `.precision: integer` / `.scale: integer`  |
  */
 @ApplicationScoped
 class StructureDefinitionMapper {
-
-  companion object {
-    const val BASE_URL = "https://interop.aphp.fr/fhir/StructureDefinition"
-  }
-
-  /**
-   * Mappe chaque table indépendamment : une table en échec (contrainte CHECK/UNIQUE ambiguë, ou
-   * collision de sdId avec une autre table) n'empêche pas les autres tables du run d'être mappées
-   * (succès partiel, cf. ticket #16). Une collision de sdId entre deux tables par ailleurs valides
-   * exclut les deux (ni l'une ni l'autre n'est plus "en faute" que l'autre), pas seulement l'une des deux.
-   */
-  fun map(tables: List<SqlTable>): MappingResult {
-    val failures = mutableListOf<TableMappingFailure>()
-    val mappedTables = mutableListOf<SqlTable>()
-    val mappedDefinitions = mutableListOf<StructureDefinition>()
-    tables.forEach { table ->
-      try {
-        mappedDefinitions += mapTable(table)
-        mappedTables += table
-      } catch (e: MappingValidationException) {
-        failures += TableMappingFailure(table.name, e)
-      }
+    companion object {
+        const val BASE_URL = "https://interop.aphp.fr/fhir/StructureDefinition"
     }
 
-    // Deux tables ne doivent jamais produire le même identifiant de StructureDefinition :
-    // le second fichier .fsh écraserait silencieusement le premier (cf. ticket #14).
-    val mappedPairs = mappedTables.zip(mappedDefinitions)
-    val firstTableNameById = mutableMapOf<String, String>()
-    val collisionExceptionByTableName = mutableMapOf<String, DuplicateStructureDefinitionIdException>()
-    mappedPairs.forEach { (table, sd) ->
-      val previousTableName = firstTableNameById.putIfAbsent(sd.id, table.name)
-      if (previousTableName != null) {
-        val exception = DuplicateStructureDefinitionIdException(
-          "Les tables '$previousTableName' et '${table.name}' produisent le même identifiant FHIR " +
-            "'${sd.id}' — renommez l'une d'elles pour lever l'ambiguïté."
-        )
-        // putIfAbsent (pas +=) : une même table peut apparaître comme "previous" pour plusieurs
-        // collisions successives (groupe à 3+ tables) ou coïncider avec elle-même (deux tables
-        // strictement homonymes) — un seul TableMappingFailure par nom de table, pas un doublon.
-        collisionExceptionByTableName.putIfAbsent(previousTableName, exception)
-        collisionExceptionByTableName.putIfAbsent(table.name, exception)
-      }
-    }
-    collisionExceptionByTableName.forEach { (tableName, exception) ->
-      failures += TableMappingFailure(tableName, exception)
-    }
-
-    val successes = mappedPairs.mapNotNull { (table, sd) ->
-      sd.takeIf { table.name !in collisionExceptionByTableName }
-    }
-
-    return MappingResult(successes, failures)
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-
-  private fun mapTable(table: SqlTable): StructureDefinition {
-    val sdName = table.name.toPascalCase()
-    val sdId = table.name.toKebabCase()
-
-    // Deux UNIQUE (nommées et/ou anonymes) ne doivent jamais résoudre au même nom : ce serait deux
-    // contraintes distinctes rendues indistinguables dans le FSH généré (même pattern qu'en #11
-    // pour les clés CHECK, appliqué ici aux Unique Keys — cf. ticket #15).
-    val seenUniqueKeyNames = mutableSetOf<String>()
-    table.uniqueKeys.forEach { uniqueKey ->
-      val name = uniqueKeyName(uniqueKey)
-      seenUniqueKeyNames.addOrThrow(name) {
-        DuplicateUniqueKeyNameException(
-          "Table '${table.name}' : plusieurs contraintes UNIQUE produisent le même nom " +
-            "'$name' — renommez-les explicitement pour lever l'ambiguïté."
-        )
-      }
-    }
-
-    // ── StructureDefinition ───────────────────────────────────────────────
-    val sd = StructureDefinition().apply {
-      url            = "$BASE_URL/$sdName"
-      baseDefinition = "Base"
-      id             = sdId
-      name           = sdName
-      title          = table.name
-      status         = PublicationStatus.DRAFT
-      kind           = StructureDefinitionKind.LOGICAL
-      abstract       = false
-      type           = sdName
-      derivation     = TypeDerivationRule.SPECIALIZATION
-      description    = table.comment
-    }
-
-    sd.addExtension(Extension().apply {
-      url = EXT_CHARACTERISTICS
-      value = CodeType("can-be-target")
-    })
-
-    // Élément racine + invariants CHECK
-    val rootEl = ElementDefinition().apply {
-      id   = sdName
-      path = sdName
-      min  = 0
-      max  = "*"
-      addType(TypeRefComponent().apply { code = "Base" })
-
-      var anonymousCheckIndex = 0
-      val seenCheckKeys = mutableSetOf<String>()
-      table.checks.forEach { check ->
-        val normalizedCondition = InvariantText.normalize(check.conditionText)
-        // Repli anonyme basé sur le contenu (stable face au réordonnancement de la DDL, cf. ticket #12) ;
-        // l'index positionnel ne sert plus qu'en tout dernier recours si la condition normalisée
-        // elle-même se réduit à rien (cf. ticket #13).
-        val key = check.name?.toConstraintKey()?.takeIf { it.isNotBlank() }
-          ?: normalizedCondition.toConstraintKey().takeIf { it.isNotBlank() }?.let { "chk-$it" }
-          ?: run {
-            anonymousCheckIndex++
-            "chk-${sdName.lowercase()}-$anonymousCheckIndex"
-          }
-
-        // Deux CHECK (nommées et/ou anonymes) ne doivent jamais produire la même clé FHIR :
-        // ce serait deux invariants distincts silencieusement fusionnés en un seul (cf. ticket #11).
-        seenCheckKeys.addOrThrow(key) {
-          DuplicateConstraintKeyException(
-            "Table '${table.name}' : plusieurs contraintes CHECK produisent la même clé FHIR " +
-              "'$key' — renommez-les explicitement pour lever l'ambiguïté."
-          )
+    /**
+     * Maps each table independently: a failing table (ambiguous CHECK/UNIQUE constraint, or an
+     * sdId collision with another table) does not prevent the other tables in the run from being
+     * mapped (partial success, see ticket #16). An sdId collision between two otherwise-valid
+     * tables excludes both (neither is more "at fault" than the other), not just one of the two.
+     */
+    fun map(tables: List<SqlTable>): MappingResult {
+        val failures = mutableListOf<TableMappingFailure>()
+        val mappedTables = mutableListOf<SqlTable>()
+        val mappedDefinitions = mutableListOf<StructureDefinition>()
+        tables.forEach { table ->
+            try {
+                mappedDefinitions += mapTable(table)
+                mappedTables += table
+            } catch (e: MappingValidationException) {
+                failures += TableMappingFailure(table.name, e)
+            }
         }
 
-        addConstraint(ElementDefinition.ElementDefinitionConstraintComponent().apply {
-          this.key    = key
-          severity    = ElementDefinition.ConstraintSeverity.ERROR
-          human       = normalizedCondition
-          expression  = "true"
-        })
-      }
-    }
-    sd.differential.addElement(rootEl)
+        // Two tables must never produce the same StructureDefinition id: the second .fsh file
+        // would silently overwrite the first (see ticket #14).
+        val mappedPairs = mappedTables.zip(mappedDefinitions)
+        val firstTableNameById = mutableMapOf<String, String>()
+        val collisionExceptionByTableName = mutableMapOf<String, DuplicateStructureDefinitionIdException>()
+        mappedPairs.forEach { (table, sd) ->
+            val previousTableName = firstTableNameById.putIfAbsent(sd.id, table.name)
+            if (previousTableName != null) {
+                val exception =
+                    DuplicateStructureDefinitionIdException(
+                        "Tables '$previousTableName' and '${table.name}' produce the same FHIR identifier " +
+                            "'${sd.id}' — rename one of them to resolve the ambiguity.",
+                    )
+                // putIfAbsent (not +=): the same table can appear as "previous" for several
+                // successive collisions (a group of 3+ tables) or coincide with itself (two
+                // strictly identically-named tables) — one TableMappingFailure per table name, not a duplicate.
+                collisionExceptionByTableName.putIfAbsent(previousTableName, exception)
+                collisionExceptionByTableName.putIfAbsent(table.name, exception)
+            }
+        }
+        collisionExceptionByTableName.forEach { (tableName, exception) ->
+            failures += TableMappingFailure(tableName, exception)
+        }
 
-    // Un ou plusieurs ElementDefinition par colonne (BackboneElement + enfants si la colonne
-    // porte au moins un fait), contexte pré-calculé en une passe
-    buildColumnContexts(table).forEach { context ->
-      buildColumnElements(context, sdName).forEach { sd.differential.addElement(it) }
-    }
-    return sd
-  }
+        val successes =
+            mappedPairs.mapNotNull { (table, sd) ->
+                sd.takeIf { table.name !in collisionExceptionByTableName }
+            }
 
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /** Tous les faits d'une colonne (cardinalité, PK, FK, unique) résolus en une seule passe sur [SqlTable]. */
-  private data class ColumnContext(
-    val column: SqlColumn,
-    val min: Int,
-    val max: String,
-    val isPrimaryKey: Boolean,
-    val foreignKeys: List<SqlForeignKey>,
-    val uniqueKey: SqlUniqueKey?,
-  )
-
-  private fun buildColumnContexts(table: SqlTable): List<ColumnContext> =
-    table.columns.map { column ->
-      val forcedNotNull = column.name in table.notNullColumns
-      ColumnContext(
-        column       = column,
-        min          = if (forcedNotNull || !column.nullable) 1 else 0,
-        max          = "1",
-        isPrimaryKey = column.name in table.primaryKeyColumns,
-        // La colonne cible positionnellement correspondante (voir ticket #10) n'est plus portée
-        // ici : depuis la migration BackboneElement (#20/#21), `.fkN.targetColumn` est déclaré
-        // sans valeur fixée (cf. `docs/backbone-element-migration-spec.md`), donc plus lue.
-        foreignKeys  = table.foreignKeys.filter { column.name in it.localColumns },
-        uniqueKey    = table.uniqueKeys.firstOrNull { column.name in it.columns },
-      )
+        return MappingResult(successes, failures)
     }
 
-  /**
-   * Un ou plusieurs [ElementDefinition] pour une colonne : un seul élément primitif si elle ne
-   * porte aucun fait structurel, sinon un wrapper `BackboneElement` suivi de ses enfants (dans
-   * l'ordre `.value`, `.isPrimaryKey`, `.uniqueKeyName`, `.precision`, `.scale`, `.fkN.*` — voir
-   * `docs/backbone-element-migration-spec.md`, résolutions #20/#21 de la carte wayfinder #18).
-   */
-  private fun buildColumnElements(context: ColumnContext, parentPath: String): List<ElementDefinition> {
-    val column = context.column
-    val elementPath = "$parentPath.${column.name.toCamelCase()}"
-    val hasFacts = context.isPrimaryKey ||
-      context.foreignKeys.isNotEmpty() ||
-      context.uniqueKey != null ||
-      column.precision > 0
+    // ─────────────────────────────────────────────────────────────────────────
 
-    if (!hasFacts) return listOf(buildPrimitiveElement(context, elementPath))
+    private fun mapTable(table: SqlTable): StructureDefinition {
+        val sdName = table.name.toPascalCase()
+        val sdId = table.name.toKebabCase()
 
-    val elements = mutableListOf<ElementDefinition>()
+        // Two UNIQUE constraints (named and/or anonymous) must never resolve to the same name: that
+        // would be two distinct constraints rendered indistinguishable in the generated FSH (same
+        // pattern as #11 for CHECK keys, applied here to Unique Keys — see ticket #15).
+        val seenUniqueKeyNames = mutableSetOf<String>()
+        table.uniqueKeys.forEach { uniqueKey ->
+            val name = uniqueKeyName(uniqueKey)
+            seenUniqueKeyNames.addOrThrow(name) {
+                DuplicateUniqueKeyNameException(
+                    "Table '${table.name}': several UNIQUE constraints produce the same name " +
+                        "'$name' — rename them explicitly to resolve the ambiguity.",
+                )
+            }
+        }
 
-    elements += ElementDefinition().apply {
-      id   = elementPath
-      path = elementPath
-      min  = context.min
-      max  = context.max
-      addType(TypeRefComponent().apply { code = "BackboneElement" })
+        // ── StructureDefinition ───────────────────────────────────────────────
+        val sd =
+            StructureDefinition().apply {
+                url = "$BASE_URL/$sdName"
+                baseDefinition = "Base"
+                id = sdId
+                name = sdName
+                title = table.name
+                status = PublicationStatus.DRAFT
+                kind = StructureDefinitionKind.LOGICAL
+                abstract = false
+                type = sdName
+                derivation = TypeDerivationRule.SPECIALIZATION
+                description = table.comment
+            }
+
+        sd.addExtension(
+            Extension().apply {
+                url = EXT_CHARACTERISTICS
+                value = CodeType("can-be-target")
+            },
+        )
+
+        // Root element + CHECK invariants
+        val rootEl =
+            ElementDefinition().apply {
+                id = sdName
+                path = sdName
+                min = 0
+                max = "*"
+                addType(TypeRefComponent().apply { code = "Base" })
+
+                var anonymousCheckIndex = 0
+                val seenCheckKeys = mutableSetOf<String>()
+                table.checks.forEach { check ->
+                    val normalizedCondition = InvariantText.normalize(check.conditionText)
+                    // Content-based anonymous fallback (stable against DDL reordering, see ticket #12);
+                    // the positional index is now only a last resort, if the normalized condition
+                    // itself reduces to nothing (see ticket #13).
+                    val key =
+                        check.name?.toConstraintKey()?.takeIf { it.isNotBlank() }
+                            ?: normalizedCondition.toConstraintKey().takeIf { it.isNotBlank() }?.let { "chk-$it" }
+                            ?: run {
+                                anonymousCheckIndex++
+                                "chk-${sdName.lowercase()}-$anonymousCheckIndex"
+                            }
+
+                    // Two CHECK constraints (named and/or anonymous) must never produce the same FHIR
+                    // key: that would be two distinct invariants silently merged into one (see ticket #11).
+                    seenCheckKeys.addOrThrow(key) {
+                        DuplicateConstraintKeyException(
+                            "Table '${table.name}': several CHECK constraints produce the same FHIR key " +
+                                "'$key' — rename them explicitly to resolve the ambiguity.",
+                        )
+                    }
+
+                    addConstraint(
+                        ElementDefinition.ElementDefinitionConstraintComponent().apply {
+                            this.key = key
+                            severity = ElementDefinition.ConstraintSeverity.ERROR
+                            human = normalizedCondition
+                            expression = "true"
+                        },
+                    )
+                }
+            }
+        sd.differential.addElement(rootEl)
+
+        // One or more ElementDefinitions per column (BackboneElement + children if the column
+        // carries at least one fact), context precomputed in a single pass
+        buildColumnContexts(table).forEach { context ->
+            buildColumnElements(context, sdName).forEach { sd.differential.addElement(it) }
+        }
+        return sd
     }
 
-    // `.value` porte la valeur scalaire d'origine, sous la même forme qu'un élément primitif non
-    // enveloppé — omis sur une colonne FK, dont le(s) `.fkN.reference` jouent déjà ce rôle
-    // (cf. résolution #21).
-    if (context.foreignKeys.isEmpty()) {
-      elements += buildPrimitiveElement(context, "$elementPath.value")
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** All facts about a column (cardinality, PK, FK, unique) resolved in a single pass over [SqlTable]. */
+    private data class ColumnContext(
+        val column: SqlColumn,
+        val min: Int,
+        val max: String,
+        val isPrimaryKey: Boolean,
+        val foreignKeys: List<SqlForeignKey>,
+        val uniqueKey: SqlUniqueKey?,
+    )
+
+    private fun buildColumnContexts(table: SqlTable): List<ColumnContext> =
+        table.columns.map { column ->
+            val forcedNotNull = column.name in table.notNullColumns
+            ColumnContext(
+                column = column,
+                min = if (forcedNotNull || !column.nullable) 1 else 0,
+                max = "1",
+                isPrimaryKey = column.name in table.primaryKeyColumns,
+                // The positionally-corresponding target column (see ticket #10) is no longer carried
+                // here: since the BackboneElement migration (#20/#21), `.fkN.targetColumn` is declared
+                // with no fixed value (see `docs/backbone-element-migration-spec.md`), so it's no longer read.
+                foreignKeys = table.foreignKeys.filter { column.name in it.localColumns },
+                uniqueKey = table.uniqueKeys.firstOrNull { column.name in it.columns },
+            )
+        }
+
+    /**
+     * One or more [ElementDefinition]s for a column: a single primitive element if it carries no
+     * structural fact, otherwise a `BackboneElement` wrapper followed by its children (in the
+     * order `.value`, `.isPrimaryKey`, `.uniqueKeyName`, `.precision`, `.scale`, `.fkN.*` — see
+     * `docs/backbone-element-migration-spec.md`, resolutions #20/#21 of wayfinder map #18).
+     */
+    private fun buildColumnElements(
+        context: ColumnContext,
+        parentPath: String,
+    ): List<ElementDefinition> {
+        val column = context.column
+        val elementPath = "$parentPath.${column.name.toCamelCase()}"
+        val hasFacts =
+            context.isPrimaryKey ||
+                context.foreignKeys.isNotEmpty() ||
+                context.uniqueKey != null ||
+                column.precision > 0
+
+        if (!hasFacts) return listOf(buildPrimitiveElement(context, elementPath))
+
+        val elements = mutableListOf<ElementDefinition>()
+
+        elements +=
+            ElementDefinition().apply {
+                id = elementPath
+                path = elementPath
+                min = context.min
+                max = context.max
+                addType(TypeRefComponent().apply { code = "BackboneElement" })
+            }
+
+        // `.value` carries the original scalar value, in the same form as an unwrapped primitive
+        // element — omitted on an FK column, whose `.fkN.reference`(s) already play that role
+        // (see resolution #21).
+        if (context.foreignKeys.isEmpty()) {
+            elements += buildPrimitiveElement(context, "$elementPath.value")
+        }
+
+        // Every fact below is known at mapping time (resolved from the DDL) and constant for every
+        // row of the column: it is fixed via an Assignment Rule, on top of its declaration — same
+        // logic as the former extension (`^extension[=].value... = ...`), not just its shape. Only
+        // `.value` and `.fkN.reference` remain without a fixed value: those are per-record data,
+        // not schema facts.
+        if (context.isPrimaryKey) {
+            elements += leafElement("$elementPath.isPrimaryKey", 1, "1", "boolean", "Primary key member", BooleanType(true))
+        }
+
+        context.uniqueKey?.let {
+            elements += leafElement("$elementPath.uniqueKeyName", 1, "1", "string", "Unique key name", StringType(uniqueKeyName(it)))
+        }
+
+        if (column.precision > 0) {
+            elements += leafElement("$elementPath.precision", 1, "1", "integer", "Numeric precision", IntegerType(column.precision))
+        }
+
+        if (column.scale > 0) {
+            elements += leafElement("$elementPath.scale", 0, "1", "integer", "Numeric scale", IntegerType(column.scale))
+        }
+
+        context.foreignKeys.forEachIndexed { index, fk ->
+            val fkPath = "$elementPath.fk${index + 1}"
+            val targetSdName = fk.targetTable.toPascalCase()
+            // Target column *positionally* matching the local column (see ticket #10:
+            // localColumns[i] <-> targetColumns[i], not the cartesian product of the two lists).
+            val targetColumnName = fk.targetColumns[fk.localColumns.indexOf(column.name)].toCamelCase()
+
+            elements +=
+                ElementDefinition().apply {
+                    id = fkPath
+                    path = fkPath
+                    min = 1
+                    max = "1"
+                    addType(TypeRefComponent().apply { code = "BackboneElement" })
+                    short = "Foreign key to $targetSdName"
+                }
+            elements +=
+                ElementDefinition().apply {
+                    id = "$fkPath.reference"
+                    path = "$fkPath.reference"
+                    min = 1
+                    max = "1"
+                    addType(
+                        TypeRefComponent().apply {
+                            code = "Reference"
+                            addTargetProfile(targetSdName)
+                        },
+                    )
+                }
+            elements += leafElement("$fkPath.targetColumn", 1, "1", "string", null, StringType(targetColumnName))
+        }
+
+        return elements
     }
 
-    // Chaque fait ci-dessous est connu au moment du mapping (résolu depuis la DDL) et constant
-    // pour toutes les lignes de la colonne : on le fixe via une Assignment Rule, en plus de sa
-    // déclaration — même logique que l'ancienne extension (`^extension[=].value... = ...`), pas
-    // seulement sa forme. Seuls `.value` et `.fkN.reference` restent sans valeur fixée : ce sont
-    // des données propres à chaque enregistrement, pas des faits de schéma.
-    if (context.isPrimaryKey) {
-      elements += leafElement("$elementPath.isPrimaryKey", 1, "1", "boolean", "Primary key member", BooleanType(true))
+    private fun buildPrimitiveElement(
+        context: ColumnContext,
+        elementPath: String,
+    ): ElementDefinition {
+        val column = context.column
+        return ElementDefinition().apply {
+            id = elementPath
+            path = elementPath
+            min = context.min
+            max = context.max
+            addType(TypeRefComponent().apply { code = sqlTypeToFhirType(column.sqlType) })
+            column.comment?.let { short = it }
+            column.length.takeIf { it > 0 }?.let { len -> maxLengthElement = IntegerType(len) }
+        }
     }
 
-    context.uniqueKey?.let {
-      elements += leafElement("$elementPath.uniqueKeyName", 1, "1", "string", "Unique key name", StringType(uniqueKeyName(it)))
+    private fun leafElement(
+        path: String,
+        min: Int,
+        max: String,
+        typeCode: String,
+        short: String?,
+        fixed: Type? = null,
+    ): ElementDefinition =
+        ElementDefinition().apply {
+            id = path
+            this.path = path
+            this.min = min
+            this.max = max
+            addType(TypeRefComponent().apply { code = typeCode })
+            short?.let { this.short = it }
+            fixed?.let { this.fixed = it }
+        }
+
+    /** Name of a UNIQUE constraint (verbatim if named), or a fallback based on its columns if anonymous (e.g. code -> uq-code). */
+    private fun uniqueKeyName(uniqueKey: SqlUniqueKey): String =
+        uniqueKey.name
+            ?: "uq-" + uniqueKey.columns.joinToString("-") { it.toKebabCase() }
+
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private fun sqlTypeToFhirType(sqlType: String): String =
+        when (sqlType.substringBefore("(").trim()) {
+            "VARCHAR", "VARCHAR2", "NVARCHAR", "NVARCHAR2",
+            "CHAR", "NCHAR", "CLOB", "NCLOB", "TEXT",
+            "LONG", "XMLTYPE",
+            -> "string"
+
+            "BOOLEAN", "BOOL" -> "boolean"
+
+            "NUMBER", "NUMERIC", "DECIMAL" -> "decimal"
+
+            "INTEGER", "INT", "INT4", "SMALLINT",
+            "TINYINT", "INT2",
+            "BINARY_INTEGER", "PLS_INTEGER",
+            -> "integer"
+
+            "BIGINT", "INT8" -> "integer64"
+
+            "FLOAT", "REAL", "DOUBLE",
+            "FLOAT8", "BINARY_FLOAT", "BINARY_DOUBLE",
+            -> "decimal"
+
+            "DATE" -> "date"
+            "TIMESTAMP" -> "dateTime"
+            "TIME", "INTERVAL" -> "string"
+
+            "UUID", "GUID", "RAW" -> "uuid"
+            "BLOB", "BYTEA", "BINARY",
+            "VARBINARY", "LONG RAW",
+            -> "base64Binary"
+
+            "JSON", "JSONB" -> "string"
+
+            else -> "string"
+        }
+
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** chk_note CHECK → chk-note-check  (valid FSH key) */
+    private fun String.toConstraintKey() =
+        lowercase()
+            .replace(Regex("[^a-z0-9]+"), "-")
+            .trim('-')
+
+    /**
+     * Adds [key] to this set of keys already seen within the same table, or throws the exception
+     * from [exception] if it's already there — a pattern shared by CHECK keys (#11) and UNIQUE
+     * names (#15) within a table (see ticket #17; the sdId collision between tables, #14/#16, no
+     * longer throws since the partial success added in #16, and so no longer follows this same shape).
+     */
+    private fun MutableSet<String>.addOrThrow(
+        key: String,
+        exception: () -> MappingValidationException,
+    ) {
+        if (!add(key)) throw exception()
     }
-
-    if (column.precision > 0) {
-      elements += leafElement("$elementPath.precision", 1, "1", "integer", "Numeric precision", IntegerType(column.precision))
-    }
-
-    if (column.scale > 0) {
-      elements += leafElement("$elementPath.scale", 0, "1", "integer", "Numeric scale", IntegerType(column.scale))
-    }
-
-    context.foreignKeys.forEachIndexed { index, fk ->
-      val fkPath = "$elementPath.fk${index + 1}"
-      val targetSdName = fk.targetTable.toPascalCase()
-      // Colonne cible correspondant *positionnellement* à la colonne locale (voir ticket #10 :
-      // localColumns[i] <-> targetColumns[i], pas le produit cartésien des deux listes).
-      val targetColumnName = fk.targetColumns[fk.localColumns.indexOf(column.name)].toCamelCase()
-
-      elements += ElementDefinition().apply {
-        id    = fkPath
-        path  = fkPath
-        min   = 1
-        max   = "1"
-        addType(TypeRefComponent().apply { code = "BackboneElement" })
-        short = "Foreign key to $targetSdName"
-      }
-      elements += ElementDefinition().apply {
-        id   = "$fkPath.reference"
-        path = "$fkPath.reference"
-        min  = 1
-        max  = "1"
-        addType(TypeRefComponent().apply {
-          code = "Reference"
-          addTargetProfile(targetSdName)
-        })
-      }
-      elements += leafElement("$fkPath.targetColumn", 1, "1", "string", null, StringType(targetColumnName))
-    }
-
-    return elements
-  }
-
-  private fun buildPrimitiveElement(context: ColumnContext, elementPath: String): ElementDefinition {
-    val column = context.column
-    return ElementDefinition().apply {
-      id   = elementPath
-      path = elementPath
-      min  = context.min
-      max  = context.max
-      addType(TypeRefComponent().apply { code = sqlTypeToFhirType(column.sqlType) })
-      column.comment?.let { short = it }
-      column.length.takeIf { it > 0 }?.let { len -> maxLengthElement = IntegerType(len) }
-    }
-  }
-
-  private fun leafElement(
-    path: String, min: Int, max: String, typeCode: String, short: String?, fixed: Type? = null,
-  ): ElementDefinition =
-    ElementDefinition().apply {
-      id   = path
-      this.path = path
-      this.min  = min
-      this.max  = max
-      addType(TypeRefComponent().apply { code = typeCode })
-      short?.let { this.short = it }
-      fixed?.let { this.fixed = it }
-    }
-
-  /** Nom d'une UNIQUE (verbatim si nommée), ou repli basé sur ses colonnes si anonyme (ex. code -> uq-code). */
-  private fun uniqueKeyName(uniqueKey: SqlUniqueKey): String =
-    uniqueKey.name
-      ?: "uq-" + uniqueKey.columns.joinToString("-") { it.toKebabCase() }
-
-  // ─────────────────────────────────────────────────────────────────────────
-
-  private fun sqlTypeToFhirType(sqlType: String): String =
-    when (sqlType.substringBefore("(").trim()) {
-      "VARCHAR", "VARCHAR2", "NVARCHAR", "NVARCHAR2",
-      "CHAR", "NCHAR", "CLOB", "NCLOB", "TEXT",
-      "LONG", "XMLTYPE"                           -> "string"
-
-      "BOOLEAN", "BOOL"                           -> "boolean"
-
-      "NUMBER", "NUMERIC", "DECIMAL"              -> "decimal"
-
-      "INTEGER", "INT", "INT4", "SMALLINT",
-      "TINYINT", "INT2",
-      "BINARY_INTEGER", "PLS_INTEGER"             -> "integer"
-
-      "BIGINT", "INT8"                            -> "integer64"
-
-      "FLOAT", "REAL", "DOUBLE",
-      "FLOAT8", "BINARY_FLOAT", "BINARY_DOUBLE"   -> "decimal"
-
-      "DATE"                                      -> "date"
-      "TIMESTAMP"                                 -> "dateTime"
-      "TIME", "INTERVAL"                          -> "string"
-
-      "UUID", "GUID", "RAW"                       -> "uuid"
-      "BLOB", "BYTEA", "BINARY",
-      "VARBINARY", "LONG RAW"                     -> "base64Binary"
-
-      "JSON", "JSONB"                             -> "string"
-
-      else                                        -> "string"
-    }
-
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /** chk_note CHECK → chk-note-check  (clé FSH valide) */
-  private fun String.toConstraintKey() =
-    lowercase()
-      .replace(Regex("[^a-z0-9]+"), "-")
-      .trim('-')
-
-  /**
-   * Ajoute [key] à cet ensemble de clés déjà vues au sein d'une même table, ou lève l'exception
-   * de [exception] si elle y est déjà — pattern partagé par les clés CHECK (#11) et les noms
-   * UNIQUE (#15) au sein d'une table (cf. ticket #17 ; la collision de sdId entre tables, #14/#16,
-   * ne throw plus depuis le succès partiel du #16 et ne suit donc plus cette même forme).
-   */
-  private fun MutableSet<String>.addOrThrow(key: String, exception: () -> MappingValidationException) {
-    if (!add(key)) throw exception()
-  }
 }
