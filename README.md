@@ -39,10 +39,14 @@ The domain glossary (SQL Table, SQL Column, Logical Model, Invariant…) lives i
 # Usage (transcribe is the subcommand, -o is an OUTPUT FOLDER
 # that must already exist)
 mkdir -p output
-java -jar build/sashimi-0.1.0-SNAPSHOT-runner.jar transcribe \
+java -jar build/*-runner.jar transcribe \
   --input src/test/resources/fixtures/patient-record/input.sql \
   --output output
 ```
+
+(the runner jar's name carries the build's version, e.g. `sashimi-1.0.0-runner.jar` for a
+tagged release, or the local snapshot version otherwise — grab the exact filename from
+`build/` or, for a released version, from the [Releases page](https://github.com/davidouagne/sashimi/releases))
 
 `--dialect` changes the casing of unquoted identifiers in the output
 (e.g. `POSTGRES` folds them to lowercase, `DEFAULT` to uppercase) — the
@@ -100,6 +104,15 @@ fixtures are also the project's reference examples — see
 `src/test/resources/fixtures/patient-record/` for a simple case, or
 `os-kern-fall/` / `os-mup-messungen/` for real-world schemas with foreign
 keys and CHECK constraints.
+
+## Stability
+
+As of `1.0.0`, the `transcribe` CLI's flags (`--input`, `--output`, `--dialect`) are
+considered stable: a breaking change to any of them requires a major version bump.
+
+The FSH generated for a given SQL DDL — the shape, naming, and structure of the produced
+Logical Models — is **not yet** covered by that guarantee and may change in a minor or
+patch release as the mapping continues to evolve.
 
 ## Next steps
 
