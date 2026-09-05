@@ -1,7 +1,7 @@
 # Sashimi
 
 [![CI](https://github.com/davidouagne/sashimi/actions/workflows/ci.yml/badge.svg)](https://github.com/davidouagne/sashimi/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/davidouagne/sashimi)](LICENSE.md)
+[![License](https://img.shields.io/github/license/davidouagne/sashimi?cacheSeconds=3600)](LICENSE.md)
 [![Latest release](https://img.shields.io/github/v/release/davidouagne/sashimi?include_prereleases)](https://github.com/davidouagne/sashimi/releases)
 [![codecov](https://codecov.io/gh/davidouagne/sashimi/branch/main/graph/badge.svg)](https://codecov.io/gh/davidouagne/sashimi)
 
