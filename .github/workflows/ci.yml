@@ -25,5 +25,26 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Test + lint
-        run: ./gradlew test ktlintCheck --console=plain
+      - name: Test + lint + static analysis
+        run: ./gradlew test ktlintCheck detekt jacocoTestReport --console=plain
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          report=build/reports/jacoco/test/jacocoTestReport.xml
+          if [ -f "$report" ]; then
+            line=$(grep -o 'type="LINE" missed="[0-9]*" covered="[0-9]*"' "$report" | tail -1)
+            missed=$(echo "$line" | grep -o 'missed="[0-9]*"' | grep -o '[0-9]*')
+            covered=$(echo "$line" | grep -o 'covered="[0-9]*"' | grep -o '[0-9]*')
+            total=$((missed + covered))
+            pct=$(awk -v c="$covered" -v t="$total" 'BEGIN { printf "%.1f", (t > 0) ? (c / t * 100) : 0 }')
+            echo "### Coverage: ${pct}% lines (${covered}/${total})" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: build/reports/jacoco/test/html
+          retention-days: 14

@@ -1,0 +1,6 @@
+style:
+  WildcardImport:
+    # HAPI FHIR's org.hl7.fhir.r4.model package has hundreds of classes;
+    # wildcard imports for it are standard practice, not a style lapse.
+    # Mirrors ktlint_standard_no-wildcard-imports = disabled in .editorconfig.
+    active: false

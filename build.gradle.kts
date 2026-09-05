@@ -3,6 +3,8 @@ plugins {
     kotlin("jvm") version "2.4.10"
     id("io.quarkus") version "3.39.1"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
+    id("io.gitlab.arturbosch.detekt") version "1.23.8"
+    jacoco
 }
 
 group = "fr.aphp"
@@ -49,4 +51,24 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform()
+    finalizedBy(tasks.jacocoTestReport)
+}
+
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
+}
+
+detekt {
+    buildUponDefaultConfig = true
+    autoCorrect = false
+    config.setFrom(files("config/detekt/detekt.yml"))
+    baseline = file("config/detekt/baseline.xml")
 }

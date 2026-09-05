@@ -34,11 +34,15 @@ jobs:
       - name: Build
         run: ./gradlew build -PreleaseVersion=${{ steps.version.outputs.value }} --console=plain
 
+      - name: Generate checksums
+        run: sha256sum build/*-runner.jar > build/checksums.txt
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ github.ref_name }}" \
             build/*-runner.jar \
+            build/checksums.txt \
             --title "${{ github.ref_name }}" \
             --generate-notes

@@ -1,0 +1,29 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:FshWriter.kt$FshWriter$private fun renderElement( el: ElementDefinition, rootPath: String, ): ElementRender</ID>
+    <ID>CyclomaticComplexMethod:FshWriter.kt$FshWriter$private fun renderValue(t: Type): String</ID>
+    <ID>CyclomaticComplexMethod:StructureDefinitionMapper.kt$StructureDefinitionMapper$private fun buildColumnElements( context: ColumnContext, parentPath: String, ): List&lt;ElementDefinition&gt;</ID>
+    <ID>LongMethod:SqlTableParser.kt$SqlTableParser$private fun toSqlTable( ct: QOM.CreateTable, comments: List&lt;QOM.CommentOn&gt;, ): SqlTable</ID>
+    <ID>LongMethod:StructureDefinitionMapper.kt$StructureDefinitionMapper$private fun buildColumnElements( context: ColumnContext, parentPath: String, ): List&lt;ElementDefinition&gt;</ID>
+    <ID>LongMethod:StructureDefinitionMapper.kt$StructureDefinitionMapper$private fun mapTable(table: SqlTable): StructureDefinition</ID>
+    <ID>LongParameterList:StructureDefinitionMapper.kt$StructureDefinitionMapper$( path: String, min: Int, max: String, typeCode: String, short: String?, fixed: Type? = null, )</ID>
+    <ID>MaxLineLength:FshWriterTest.kt$FshWriterTest.PrimaryKey$fsh.lines().count { it.trim() == "* colA.isPrimaryKey = true" || it.trim() == "* colB.isPrimaryKey = true" }</ID>
+    <ID>MaxLineLength:FshWriterTest.kt$FshWriterTest.TypeMapping$"FSH should map $sqlType to $fhirType (with or without a BackboneElement wrapper)\n\nProduced FSH:\n$fsh"</ID>
+    <ID>MaxLineLength:SashimiMain.kt$TranscribeCommand$@CommandLine.Command(name = "transcribe", description = ["Transcribe a SQL DDL file into FHIR StructureDefinitions in FSH format."])</ID>
+    <ID>MaxLineLength:SashimiMain.kt$TranscribeCommand$log.error("Table '${failure.tableName}' skipped: ${failure.exception.message ?: failure.exception.toString()}")</ID>
+    <ID>MaxLineLength:StructureDefinitionMapper.kt$StructureDefinitionMapper$*</ID>
+    <ID>MaxLineLength:StructureDefinitionMapper.kt$StructureDefinitionMapper$/** Name of a UNIQUE constraint (verbatim if named), or a fallback based on its columns if anonymous (e.g. code -&gt; uq-code). */</ID>
+    <ID>MaxLineLength:StructureDefinitionMapper.kt$StructureDefinitionMapper$elements += leafElement("$elementPath.isPrimaryKey", 1, "1", "boolean", "Primary key member", BooleanType(true))</ID>
+    <ID>MaxLineLength:StructureDefinitionMapper.kt$StructureDefinitionMapper$elements += leafElement("$elementPath.precision", 1, "1", "integer", "Numeric precision", IntegerType(column.precision))</ID>
+    <ID>MaxLineLength:StructureDefinitionMapper.kt$StructureDefinitionMapper$elements += leafElement("$elementPath.uniqueKeyName", 1, "1", "string", "Unique key name", StringType(uniqueKeyName(it)))</ID>
+    <ID>MaxLineLength:StructureDefinitionMapperTest.kt$StructureDefinitionMapperTest$SqlColumn(name = colName, sqlType = "INT", length = 0, precision = 0, scale = 0, nullable = true, comment = null)</ID>
+    <ID>MaxLineLength:StructureDefinitionMapperTest.kt$StructureDefinitionMapperTest$assertEquals(1, result.failures.size, "A single failure entry was expected for 'person', not a duplicate: ${result.failures}")</ID>
+    <ID>MaxLineLength:StructureDefinitionMapperTest.kt$StructureDefinitionMapperTest$assertEquals(3, result.failures.size, "Each table in the group must have its own entry, without duplication: ${result.failures}")</ID>
+    <ID>MaxLineLength:StructureDefinitionMapperTest.kt$StructureDefinitionMapperTest$assertEquals(setOf("OS.KERN_FALL", "OS_KERN.FALL", "OS-KERN-FALL"), result.failures.map { it.tableName }.toSet())</ID>
+    <ID>ReturnCount:SashimiMain.kt$TranscribeCommand$override fun call(): Int</ID>
+    <ID>TooGenericExceptionCaught:SqlTableParser.kt$SqlTableParser$e: Exception</ID>
+    <ID>TooManyFunctions:FshWriter.kt$FshWriter</ID>
+  </CurrentIssues>
+</SmellBaseline>
