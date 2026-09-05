@@ -125,4 +125,4 @@ patch release as the mapping continues to evolve.
 
 ## License
 
-MIT — see [LICENSE.md](LICENSE.md).
+MIT — see [LICENSE.md](LICENSE.md). Developed by David Ouagne.
