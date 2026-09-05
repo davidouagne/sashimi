@@ -117,7 +117,6 @@ patch release as the mapping continues to evolve.
 ## Next steps
 
 - [ ] SUSHI integration to validate the generated FSH
-- [ ] Optional JSON export (`StructureDefinition` serialized by HAPI)
 
 ## License
 
