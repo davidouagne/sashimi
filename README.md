@@ -1,5 +1,9 @@
 # Sashimi
 
+[![CI](https://github.com/davidouagne/sashimi/actions/workflows/ci.yml/badge.svg)](https://github.com/davidouagne/sashimi/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/davidouagne/sashimi)](LICENSE.md)
+[![Latest release](https://img.shields.io/github/v/release/davidouagne/sashimi?include_prereleases)](https://github.com/davidouagne/sashimi/releases)
+
 Kotlin/Quarkus CLI tool that parses a SQL DDL file and generates **FSH Logical Models** (FHIR Shorthand).
 
 ## Stack
