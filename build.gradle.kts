@@ -1,7 +1,7 @@
 
 plugins {
     kotlin("jvm") version "2.4.20"
-    id("io.quarkus") version "3.39.4"
+    id("io.quarkus") version "3.40.0"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
     id("io.gitlab.arturbosch.detekt") version "1.23.8"
     jacoco
@@ -16,7 +16,7 @@ repositories {
     mavenCentral()
 }
 
-val quarkusVersion = "3.39.3"
+val quarkusVersion = "3.39.5"
 val hapiVersion = "8.12.1"
 val jooqVersion = "3.21.8"
 
@@ -28,7 +28,7 @@ dependencies {
     implementation("io.quarkus:quarkus-arc")
 
     // Logging
-    implementation("org.slf4j:slf4j-api:2.0.19")
+    implementation("org.slf4j:slf4j-api:2.0.20")
 
     // jOOQ – parseur SQL standalone (pas besoin de datasource)
     implementation("org.jooq:jooq:$jooqVersion")
