@@ -49,9 +49,9 @@ java -jar build/*-runner.jar transcribe \
   --output output
 ```
 
-(the runner jar's name carries the build's version, e.g. `sashimi-1.0.0-runner.jar` for a
-tagged release, or the local snapshot version otherwise — grab the exact filename from
-`build/` or, for a released version, from the [Releases page](https://github.com/davidouagne/sashimi/releases))
+(the runner jar's name carries the version from `gradle.properties`, e.g. `sashimi-1.0.0-runner.jar` —
+between releases, a local build reports the last released version; released jars are on the
+[Releases page](https://github.com/davidouagne/sashimi/releases))
 
 `--dialect` changes the casing of unquoted identifiers in the output
 (e.g. `POSTGRES` folds them to lowercase, `DEFAULT` to uppercase) — the
