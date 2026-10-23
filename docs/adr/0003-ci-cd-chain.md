@@ -83,7 +83,17 @@ One workflow, `on: push: branches: [main]` + `workflow_dispatch`, `permissions: 
 
 **Token**: `gh pr merge` authenticates with the **Dependabot** secret `AUTO_MERGE_TOKEN` (fine-grained PAT limited to this repository, permissions *Contents*, *Pull requests* and *Workflows* read/write — *Workflows* because `github-actions` bumps edit `.github/workflows/`). A merge enabled with `GITHUB_TOKEN` triggers no workflow on the resulting push to `main`: release-please would not pick up the releasable `deps:` commit, and `dependency-review.yml` would not refresh the base snapshot. With the PAT the merge is attributed to the maintainer and triggers them like a manual merge. Missing or empty secret: a warning and fallback to `GITHUB_TOKEN`. The PAT expires: renew it before then, otherwise `gh pr merge` fails and the PR waits for a manual merge. The trigger is bounded to `pull_request: branches: [main]` so the PAT only acts under the `main` ruleset's required checks. The "no PAT" rule of §3 still holds for release-please itself.
 
+## 5. Security and branch protection
+
+*(Ticket [#78](https://github.com/davidouagne/sashimi/issues/78).)*
+
+- **Rulesets are the only protection** of `main` and of release tags; the classic branch protection (which required `build` + `dco`) is gone. As the exporter found, classic protection and a ruleset apply cumulatively and end up contradicting each other. Both rulesets are versioned under `docs/rulesets/` and applied through the API (`PUT /repos/{owner}/{repo}/rulesets/{id}`).
+- **Ruleset `main`** (`docs/rulesets/main.json`), identical to the exporter's except for check pinning: PR required (0 approvals, no `CODEOWNERS` — Dependabot auto-merge depends on it), `allowed_merge_methods: ["rebase"]`, review-thread resolution required, `required_linear_history`, `non_fast_forward` and `deletion` blocked, bypass Repository admin. Required status checks (`strict: false`, enforced on create): `CI status`, `dco`, `commitlint`, `dependency-review`. `CI status` aggregates the `ci.yml` jobs (§1); the commit-policy checks (ADR-0002) and `dependency-review` (§1bis) stay separate contexts.
+- **Check pinning**: all four required checks are pinned to the GitHub Actions app (`integration_id: 15368`); the exporter pins only `CI status`. Since all four are Actions jobs, pinning costs nothing and stops another app with write access from posting a green status under those names.
+- **Ruleset `tags-v`** (`docs/rulesets/tags-v.json`): `refs/tags/v*`, deletion and non-fast-forward blocked, **no creation rule** (release-please creates the tags with `GITHUB_TOKEN`), bypass Repository admin.
+- **Admin bypass, the documented escape hatches**: a release PR whose checks did not run (§3), and a fork PR whose `dependency-review` fails explicitly (§1bis).
+- Already in place before this ADR: CodeQL default setup (`actions`, `java-kotlin`; also analyses the JavaScript of `commitlint.config.mjs`), secret scanning + push protection, Dependabot alerts and security updates, private vulnerability reporting (`SECURITY.md`), `default_workflow_permissions: read`.
+
 ## Consequences
 
-- The former single `build` job, required by the `main` ruleset, is replaced by `CI status`; the ruleset's required contexts must switch from `build` to `CI status` once this lands (rulesets ticket of map #70).
-- The `build` job name survives, but as one leg aggregated by `CI status`, not as a required context.
+- The former single `build` job is replaced by `CI status` as the required context; the `build` job name survives as one leg aggregated by `CI status`.
