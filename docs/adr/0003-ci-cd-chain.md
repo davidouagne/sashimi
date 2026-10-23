@@ -27,6 +27,34 @@ Rejected: a `typecheck` job mirroring the exporter's `mypy --strict`. Kotlin's c
 
 **Cost**: each job sets up Gradle on its own (`gradle/actions/setup-gradle`, cache written on `main` only); wall-clock time stays close to the former single job, billed minutes roughly triple. Accepted.
 
+## 2. Versioning and changelog: release-please
+
+*(Ticket [#75](https://github.com/davidouagne/sashimi/issues/75); facts from the [release-please research](https://github.com/davidouagne/sashimi/blob/research/release-please-gradle/docs/research/release-please-gradle.md), [#74](https://github.com/davidouagne/sashimi/issues/74).)*
+
+**Manifest** mode (`release-please-config.json` + `.release-please-manifest.json`), root package `"."`, action `googleapis/release-please-action@v5`.
+
+- `release-type: java` with `skip-snapshot: true`. release-please has no Gradle strategy, and `java` bumps no file by itself; `skip-snapshot` stops the strategy from opening a `X.Y.Z-SNAPSHOT` PR after each release, which would block the next release PR. Rejected: `maven` (only knows `pom.xml`), `simple` with `version-file` (overwrites the whole file).
+- **The version lives in `gradle.properties`** (`version=…`), bumped through `extra-files` (`generic` updater) between `x-release-please-start-version` / `x-release-please-end` block markers — an inline marker would become part of the `.properties` value. `-PreleaseVersion` and the `0.1.0-SNAPSHOT` fallback are gone: between releases a local build reports the last released version, as in the exporter.
+- **`--version`** reads `quarkus.application.version` (the Gradle project version recorded by the Quarkus build) through a picocli `IVersionProvider`, so `gradle.properties` is the single source of truth; the CI `build` smoke checks that `--version` matches it.
+- **Bootstrap**: manifest `1.0.0` matches the existing `v1.0.0` GitHub Release, so release-please is never in bootstrap mode — no `bootstrap-sha`, no `last-release-sha` (the exporter needed `bootstrap-sha` only because it had no prior release). The non-conventional `Bump …` commits after `v1.0.0` are ignored.
+- Post-1.0: no `bump-minor-pre-major` options.
+- **Changelog sections**: the `java` default (identical to the exporter's `python` default) **except `docs`, hidden** — and since visibility also decides releasability, a `docs:` commit no longer cuts a release whose jar would be identical. Visible / releasable: `feat`, `fix`, `perf`, `deps`, `revert`. `deps` is what Dependabot's `gradle` updates use (ADR-0002 §2): bundled dependencies make their bumps user-facing.
+- `include-component-in-tag: false` → tags `vX.Y.Z`.
+- `signoff` (root key of the config; the action has no input for it) → the bot's `chore(main): release …` commit passes `dco` (ADR-0002 §4).
+- Repository setting: "Allow GitHub Actions to create and approve pull requests" enabled (release-please opens its release PR with `GITHUB_TOKEN`).
+
+## 3. Release publication (`.github/workflows/release.yml`)
+
+One workflow, `on: push: branches: [main]` + `workflow_dispatch`, `permissions: {}`, `concurrency: { group: release, cancel-in-progress: false }`. Three chained jobs: `release-please` → `build` → `smoke`.
+
+- **No PAT nor GitHub App** for release-please: the tag and Release it creates with `GITHUB_TOKEN` trigger no workflow, so the former `on: push: tags: v*` trigger would never fire. `build` and `smoke` live in the same workflow, gated on `release_created` (not on `on: release` / `on: push: tags`).
+- **Catch-up**: `workflow_dispatch` with input `publish_tag` (e.g. `v1.0.1`) replays `build` → `smoke` on an existing tag, for when the automatic run failed after the tag was created (`release_created` is only true on the run that creates the release).
+- `build` (`contents: write`): checkout of the tag (`persist-credentials: false`), `quarkusBuild`, check that the jar name carries the tag's version, `sha256sum` checksums, `gh release upload --clobber` of the runner jar + `checksums.txt` onto the Release created by release-please.
+- `smoke` (`contents: read`, `continue-on-error: true`): downloads the assets from the GitHub Release, verifies the checksum, runs `--version` (must equal the tag), `--help` and `transcribe` on a fixture. Advisory: a published release cannot be undone.
+- **Publication target**: GitHub Release assets only — no Maven Central, no container image (out of scope of map #70). So there is no `publish` job and no OIDC `environment`, unlike the exporter's PyPI publication.
+
+**To verify on the first release**: per release-please's docs, a release PR opened or updated with `GITHUB_TOKEN` triggers no CI, which would leave the required checks of the `main` ruleset pending; yet the exporter's release PRs (0.1.7–0.1.9) did show all their checks. If they are missing here, the release PR is merged through the ruleset's Repository-admin bypass.
+
 ## Consequences
 
 - The former single `build` job, required by the `main` ruleset, is replaced by `CI status`; the ruleset's required contexts must switch from `build` to `CI status` once this lands (rulesets ticket of map #70).
