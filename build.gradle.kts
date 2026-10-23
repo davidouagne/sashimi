@@ -8,9 +8,7 @@ plugins {
 }
 
 group = "fr.aphp"
-// Overridden at release-build time via -PreleaseVersion=<tag, without the leading "v">
-// (see .github/workflows/release.yml); local/CI builds fall back to the snapshot version.
-version = (project.findProperty("releaseVersion") as String?) ?: "0.1.0-SNAPSHOT"
+// `version` comes from gradle.properties, bumped by release-please (ADR-0003).
 
 repositories {
     mavenCentral()

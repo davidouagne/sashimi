@@ -6,6 +6,7 @@ import fr.aphp.sashimi.writer.FshWriter
 import io.quarkus.runtime.QuarkusApplication
 import io.quarkus.runtime.annotations.QuarkusMain
 import jakarta.inject.Inject
+import org.eclipse.microprofile.config.ConfigProvider
 import org.slf4j.LoggerFactory
 import picocli.CommandLine
 import java.io.File
@@ -23,10 +24,22 @@ class SashimiMain : QuarkusApplication {
 @CommandLine.Command(
     name = "sashimi",
     mixinStandardHelpOptions = true,
-    version = ["1.0.0"],
+    versionProvider = SashimiVersionProvider::class,
     subcommands = [TranscribeCommand::class],
 )
 class SashimiCommand
+
+// Single source of truth for --version: the Gradle project version (gradle.properties,
+// bumped by release-please), which the Quarkus build records as quarkus.application.version.
+class SashimiVersionProvider : CommandLine.IVersionProvider {
+    override fun getVersion(): Array<String> =
+        arrayOf(
+            ConfigProvider
+                .getConfig()
+                .getOptionalValue("quarkus.application.version", String::class.java)
+                .orElse("unknown"),
+        )
+}
 
 @CommandLine.Command(name = "transcribe", description = ["Transcribe a SQL DDL file into FHIR StructureDefinitions in FSH format."])
 class TranscribeCommand : Callable<Int> {

@@ -108,8 +108,12 @@ jobs:
       - name: Build the runner jar
         run: ./gradlew quarkusBuild --console=plain
 
-      - name: Smoke CLI (sashimi --help)
-        run: java -jar build/*-runner.jar --help
+      - name: Smoke CLI (--version + --help)
+        run: |
+          # --version must report the gradle.properties version (single source of truth).
+          version=$(sed -n 's/^version=//p' gradle.properties)
+          java -jar build/*-runner.jar --version | grep -Fx "$version"
+          java -jar build/*-runner.jar --help
 
       - name: Smoke transcription (one fixture DDL)
         run: |
