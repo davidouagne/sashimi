@@ -49,7 +49,7 @@ branch lands as-is on `main` and feeds the changelog (see
   (`deps` is for bumps of dependencies bundled in the runner jar).
 - The header is at most 72 characters, with no trailing period.
 
-A CI check (`commitlint`, config in `commitlint.config.mjs`) verifies every
+A CI check (`commitlint`, config in `.commitlintrc.yml`) verifies every
 non-merge commit of the pull request.
 
 Keep the branch history clean: tidy it with an interactive rebase before
