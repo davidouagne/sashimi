@@ -71,6 +71,18 @@ One workflow, `on: push: branches: [main]` + `workflow_dispatch`, `permissions: 
 
 **To verify on the first release**: per release-please's docs, a release PR opened or updated with `GITHUB_TOKEN` triggers no CI, which would leave the required checks of the `main` ruleset pending; yet the exporter's release PRs (0.1.7–0.1.9) did show all their checks. If they are missing here, the release PR is merged through the ruleset's Repository-admin bypass.
 
+## 4. Dependency management (`.github/dependabot.yml`, `dependabot-auto-merge.yml`)
+
+*(Ticket [#77](https://github.com/davidouagne/sashimi/issues/77).)*
+
+**Dependabot**, ecosystems `gradle` and `github-actions` at the root, weekly on Monday, `open-pull-requests-limit: 5`, `labels: [dependencies]` (+ `github-actions`), `assignees: [davidouagne]`, `cooldown.default-days: 3` on Gradle. Commit prefixes: `deps` for Gradle (releasable, ADR-0002 §2), `build` + scope for Actions.
+
+**Groups by name pattern**, not by `dependency-type`: for Gradle, Dependabot reports every dependency as `direct:production` (test dependencies and plugins included) and does not support `groups.dependency-type`, so the exporter's `dev-dependencies` / `prod-minor-patch` split cannot be ported. Instead, one group per **core library** — `quarkus` (`io.quarkus*`: plugin and BOM move together), `hapi-fhir` (`ca.uhn.hapi.fhir*`), `jooq` (`org.jooq*`) — then a `gradle-minor-patch` catch-all; for Actions a single `actions` group. Every group covers minor and patch only: a breaking bump of one core library never blocks the others, and majors arrive as individual PRs.
+
+**Auto-merge** (`dependabot/fetch-metadata` + `gh pr merge --auto --rebase`): **patch and minor everywhere**, core libraries included — a maintainer requirement: Quarkus, HAPI FHIR and jOOQ updates must be tested and integrated without manual work. This is broader than the exporter (patch everywhere, minor for dev/indirect only), and accepted because every Dependabot PR is gated by `CI status` (unit tests, the fixture goldens comparing generated FSH, and the runner-jar smoke), `dependency-review`, `dco` and `commitlint`; `--auto` merges only once they are green. **Majors stay under human review**: a major Quarkus or HAPI release can pass the tests yet change behaviour the fixtures do not cover, and deserves a read of its release notes. When `fetch-metadata` returns an empty `update-type`, the workflow derives it from the "from X to Y" title (first two version components); an unrecognised title stays under human review.
+
+**Token**: `gh pr merge` authenticates with the **Dependabot** secret `AUTO_MERGE_TOKEN` (fine-grained PAT limited to this repository, permissions *Contents*, *Pull requests* and *Workflows* read/write — *Workflows* because `github-actions` bumps edit `.github/workflows/`). A merge enabled with `GITHUB_TOKEN` triggers no workflow on the resulting push to `main`: release-please would not pick up the releasable `deps:` commit, and `dependency-review.yml` would not refresh the base snapshot. With the PAT the merge is attributed to the maintainer and triggers them like a manual merge. Missing or empty secret: a warning and fallback to `GITHUB_TOKEN`. The PAT expires: renew it before then, otherwise `gh pr merge` fails and the PR waits for a manual merge. The trigger is bounded to `pull_request: branches: [main]` so the PAT only acts under the `main` ruleset's required checks. The "no PAT" rule of §3 still holds for release-please itself.
+
 ## Consequences
 
 - The former single `build` job, required by the `main` ruleset, is replaced by `CI status`; the ruleset's required contexts must switch from `build` to `CI status` once this lands (rulesets ticket of map #70).
