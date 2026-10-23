@@ -1,0 +1,22 @@
+# Commit policy — ADR-0002.
+# Checked in CI (wagoid/commitlint-github-action, which bundles
+# @commitlint/config-conventional) on the PR's non-merge commits:
+# git rev-list --no-merges BASE..HEAD.
+extends:
+  - "@commitlint/config-conventional"
+rules:
+  # `deps`: the uber-jar bundles its dependencies, so a dependency bump is
+  # user-facing and releasable (ADR-0002 §2).
+  type-enum: [2, always, [feat, fix, test, docs, chore, build, deps]]
+  type-empty: [2, never]
+  subject-empty: [2, never]
+  subject-full-stop: [2, never, "."]
+  # No case constraint on the subject.
+  subject-case: [0]
+  header-max-length: [2, always, 72]
+  # Free scopes: no imposed list.
+  scope-enum: [0]
+  # Generated bodies (Dependabot: markdown tables + compare URLs) exceed
+  # 100 characters per line, and no `if:` may exempt bots from the checks.
+  body-max-line-length: [0]
+  footer-max-line-length: [0]
