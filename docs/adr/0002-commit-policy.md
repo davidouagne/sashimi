@@ -6,7 +6,7 @@ Sashimi aligns its commit policy on [datahub-healthdcat-ap-exporter's ADR-0002](
 
 ## 1. Merge method: rebase only
 
-`main` accepts only **Rebase and merge**. Merge commits and squash merges are disabled at repository level (and, once rulesets replace the classic branch protection, by the `main` ruleset with `allowed_merge_methods: ["rebase"]` and required linear history). Every commit of a PR branch lands as-is on `main` and is read by release-please. A branch is updated by rebase, never by merging `main` into it.
+`main` accepts only **Rebase and merge**. Merge commits and squash merges are disabled at repository level and by the `main` ruleset (`allowed_merge_methods: ["rebase"]`, required linear history; `docs/rulesets/main.json`, ADR-0003 §5). Every commit of a PR branch lands as-is on `main` and is read by release-please. A branch is updated by rebase, never by merging `main` into it.
 
 Rejected alternatives:
 
@@ -42,5 +42,5 @@ No `if:` bypass: humans and robots go through the same two checks (`dco`, `commi
 
 - Both checks live in `.github/workflows/commit-policy.yml` (workflow "Commit policy", jobs `dco` and `commitlint`), replacing `dco.yml`. The `dco` job name, and therefore the required status-check context, is unchanged.
 - **Not retroactive**: checks are bounded to `BASE..HEAD`; existing history (merge commits, non-conventional `Bump …` commits) is not rewritten. A Dependabot PR opened before the `build` prefix was configured fails `commitlint` until Dependabot recreates it.
-- `commitlint` becomes a required check when rulesets replace the classic branch protection (map #70, rulesets ticket); until then only `dco` is required.
+- `dco` and `commitlint` are required status checks of the `main` ruleset (ADR-0003 §5).
 - `CONTRIBUTING.md` § "Commit style" and `.github/PULL_REQUEST_TEMPLATE.md` document `git commit -s` and the clean-history requirement.
