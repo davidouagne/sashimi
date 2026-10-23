@@ -4,27 +4,47 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
     # `deps`: visible in the changelog and releasable — the uber-jar bundles
     # its dependencies, so a bump only reaches users through a release (ADR-0002 §2).
     commit-message:
       prefix: "deps"
+    labels: ["dependencies"]
+    assignees: ["davidouagne"]
+    # One group per core library, so a breaking bump of one never blocks the
+    # others; the first matching group wins, the catch-all comes last. Majors
+    # are left out of every group: they arrive as individual PRs, reviewed by
+    # a human (ADR-0003 §4). Gradle has no dev/prod dependency-type, hence
+    # name patterns rather than the exporter's dependency-type groups.
     groups:
+      quarkus:
+        patterns: ["io.quarkus*"]
+        update-types: ["minor", "patch"]
+      hapi-fhir:
+        patterns: ["ca.uhn.hapi.fhir*"]
+        update-types: ["minor", "patch"]
+      jooq:
+        patterns: ["org.jooq*"]
+        update-types: ["minor", "patch"]
       gradle-minor-patch:
-        update-types:
-          - "minor"
-          - "patch"
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
     open-pull-requests-limit: 5
     commit-message:
       prefix: "build"
       include: "scope"
+    labels: ["dependencies", "github-actions"]
+    assignees: ["davidouagne"]
     groups:
-      actions-minor-patch:
-        update-types:
-          - "minor"
-          - "patch"
+      actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
