@@ -2,9 +2,9 @@
 
 ## Supported Versions
 
-Sashimi does not yet have a stable release line; the latest tagged release
-and `main` are the only supported versions. Security fixes will target the
-most recent release.
+Only the latest release (currently the `1.x` line) and `main` are supported.
+Security fixes target the most recent release, published as a new patch
+release.
 
 ## Reporting a Vulnerability
 
@@ -17,3 +17,4 @@ Instead, use GitHub's private vulnerability reporting:
 3. Describe the issue, including reproduction steps and impact if known.
 
 We will acknowledge reports and work with you on a fix and disclosure timeline.
+There is no contractual response time: the project has a single maintainer.
