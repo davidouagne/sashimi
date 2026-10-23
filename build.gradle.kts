@@ -66,6 +66,19 @@ tasks.jacocoTestReport {
     }
 }
 
+// Coverage gate run by the CI `test` job (ADR-0003): a floor to raise over time.
+tasks.jacocoTestCoverageVerification {
+    dependsOn(tasks.test)
+    violationRules {
+        rule {
+            limit {
+                counter = "LINE"
+                minimum = "0.85".toBigDecimal()
+            }
+        }
+    }
+}
+
 detekt {
     buildUponDefaultConfig = true
     autoCorrect = false

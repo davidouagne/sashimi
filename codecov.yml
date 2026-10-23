@@ -1,0 +1,15 @@
+# Codecov is informational only (ADR-0003): the real gate is
+# jacocoTestCoverageVerification in the CI `test` job, so a Codecov outage or a
+# fork PR without OIDC can never fail CI.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        target: 85%
+        informational: true
+
+ignore:
+  - "src/test/**"
