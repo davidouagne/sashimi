@@ -92,7 +92,26 @@ One workflow, `on: push: branches: [main]` + `workflow_dispatch`, `permissions: 
 - **Check pinning**: all four required checks are pinned to the GitHub Actions app (`integration_id: 15368`); the exporter pins only `CI status`. Since all four are Actions jobs, pinning costs nothing and stops another app with write access from posting a green status under those names.
 - **Ruleset `tags-v`** (`docs/rulesets/tags-v.json`): `refs/tags/v*`, deletion and non-fast-forward blocked, **no creation rule** (release-please creates the tags with `GITHUB_TOKEN`), bypass Repository admin.
 - **Admin bypass, the documented escape hatches**: a release PR whose checks did not run (§3), and a fork PR whose `dependency-review` fails explicitly (§1bis).
+- **Action pinning: `@vN` (major tag) everywhere** *(ticket [#86](https://github.com/davidouagne/sashimi/issues/86))*. The exporter SHA-pins only the actions of its PyPI publish job, as an exception for OIDC privileges and package publication; sashimi has no such job (`release.yml` holds `contents: write` only, and publishes GitHub Release assets), so the exception has nothing to apply to. Dependabot's `actions` group keeps the major tags current. Generalised SHA pinning stays out of scope, as in the exporter.
+- Repository settings: `delete_branch_on_merge` enabled (merged PR branches are removed; `research/*` branches, linked from this ADR, are kept), `default_workflow_permissions: read`, "Allow GitHub Actions to create and approve pull requests" enabled (§2), sign-off required on web-based commits (ADR-0002 §3).
 - Already in place before this ADR: CodeQL default setup (`actions`, `java-kotlin`; also analyses the JavaScript of `commitlint.config.mjs`), secret scanning + push protection, Dependabot alerts and security updates, private vulnerability reporting (`SECURITY.md`), `default_workflow_permissions: read`.
+
+## Divergences from the exporter
+
+Final audit *(ticket [#86](https://github.com/davidouagne/sashimi/issues/86))*: the six workflow files, their `name:`s and the four required contexts are identical to the exporter's. Every remaining difference is deliberate:
+
+| Area | Exporter | Sashimi | Where |
+|---|---|---|---|
+| CI jobs behind `CI status` | `lint`, `typecheck`, `test` (3-Python matrix), `build` | `lint`, `test` (JDK 21), `build` | §1 |
+| Coverage gate | 90% | 85% (JaCoCo) | §1 |
+| Audit | `pip-audit` on `uv.lock` | open Dependabot alerts on the submitted Gradle graph (job `dependabot-alerts`) | §1 |
+| Dependency review | review only | `dependency-submission` job first; fork PRs fail explicitly | §1bis |
+| Commit types | `feat fix test docs chore build` | + `deps` (uber-jar bundles its dependencies) | ADR-0002 §2 |
+| Changelog | `python` defaults (`docs` visible) | `java` defaults, `docs` hidden | §2 |
+| Publication | PyPI (OIDC, `publish` job) | GitHub Release assets only | §3 |
+| Dependabot groups / auto-merge | by `dependency-type`; minor for dev/indirect | by name pattern per core library; minor everywhere, majors human | §4 |
+| Required-check pinning | `CI status` only | all four | §5 |
+| Language | French | English | — |
 
 ## Consequences
 
