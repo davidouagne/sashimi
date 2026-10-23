@@ -1,0 +1,110 @@
+name: Audit dependencies
+
+# Background watch, complementing the PR gate (`dependency-review.yml`): every
+# week, reads the open Dependabot alerts raised on the dependency graph that
+# `dependency-review.yml` submits on each push to `main`. ADR-0003 §1.
+#
+# Design (as the exporter's pip-audit audit): the `audit` job stays GREEN as
+# long as the alerts can be read — a known vulnerability is a finding, not a CI
+# failure, and is reported through a `dependencies` issue. The job only turns
+# red if reading the alerts fails.
+#
+# On a PR touching this workflow, only `audit` runs (to test it); no issue is
+# opened.
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Monday 06:00 UTC
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/audit.yml"]
+
+permissions: {}
+
+concurrency:
+  group: audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: dependabot-alerts
+    runs-on: ubuntu-latest
+    permissions:
+      vulnerability-alerts: read
+    outputs:
+      vulns: ${{ steps.audit.outputs.vulns }}
+      summary: ${{ steps.audit.outputs.summary }}
+    steps:
+      - name: Read open Dependabot alerts
+        id: audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Any API failure (permissions, network) makes the job red.
+          gh api --paginate "repos/$GH_REPO/dependabot/alerts?state=open&per_page=100" > alerts.json
+          jq -s 'add // []' alerts.json > all.json
+
+          vulns=$(jq 'length' all.json)
+          echo "vulns=$vulns" >> "$GITHUB_OUTPUT"
+
+          if [ "$vulns" -eq 0 ]; then
+            echo "No open Dependabot alert."
+            exit 0
+          fi
+
+          summary=$(jq -r '
+            [ .[]
+              | "\(.dependency.package.name) (\(.dependency.scope // "unknown")) → \(.security_advisory.ghsa_id) \(.security_advisory.severity) (fixed in \(.security_vulnerability.first_patched_version.identifier // "?"))"
+            ] | unique | join("; ")' all.json)
+          echo "summary=$summary" >> "$GITHUB_OUTPUT"
+
+          echo "$vulns open alert(s):"
+          echo "$summary" | tr ';' '\n'
+
+  open-issue:
+    name: Open an issue on vulnerability
+    needs: audit
+    if: github.event_name != 'pull_request' && needs.audit.outputs.vulns != '' && needs.audit.outputs.vulns != '0'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Create the `dependencies` issue (deduplicated by title)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # No checkout in this job: gh needs the repo explicitly.
+          GH_REPO: ${{ github.repository }}
+          TITLE: "Dependency audit: known vulnerability in dependencies"
+          SUMMARY: ${{ needs.audit.outputs.summary }}
+          RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: |
+          set -euo pipefail
+
+          gh label create dependencies \
+            --color BFD4F2 \
+            --description "Dependency security and updates" \
+            2>/dev/null || true
+
+          existing=$(gh issue list \
+            --state open --label dependencies \
+            --search "\"$TITLE\" in:title" \
+            --json number --jq '.[0].number // empty')
+
+          if [ -n "$existing" ]; then
+            echo "Issue #$existing already open — nothing to do."
+            exit 0
+          fi
+
+          gh issue create \
+            --title "$TITLE" \
+            --label dependencies \
+            --body "The weekly audit (workflow \`audit.yml\`) found at least one open Dependabot alert.
+
+          $SUMMARY
+
+          Details: $RUN_URL — and the repository's Security tab.
+
+          While this issue stays open, later audits do not open a new one (deduplicated by title): close it once fixed so the audit can report the next vulnerabilities."
