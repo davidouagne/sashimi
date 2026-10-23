@@ -1,0 +1,79 @@
+name: Dependency review
+
+# PR gate (ADR-0003 §1bis): `actions/dependency-review-action` diffs the
+# dependency graph between the PR base and head, and fails if the PR would
+# introduce a runtime dependency with a high-or-worse vulnerability, or under a
+# strong-copyleft licence.
+#
+# GitHub does not parse Gradle builds, so the graph must be submitted first
+# (`gradle/actions/dependency-submission`): on push to `main` (base snapshot,
+# which also feeds Dependabot alerts and the weekly audit) and on each PR
+# (head snapshot). The review job `needs:` the submission: the review action
+# silently passes when it times out waiting for a snapshot, so it must never
+# start before the snapshot exists.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: dependency-review-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-submission:
+    name: dependency-submission
+    # Fork PRs get a read-only token and cannot submit: see dependency-review.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # dependency submission API
+    env:
+      # Only what ships in the runner jar is `runtime`; tests and build tooling
+      # (detekt, ktlint, Kotlin compiler, …) become `development`, which the
+      # review below ignores (`fail-on-scopes` defaults to runtime).
+      DEPENDENCY_GRAPH_RUNTIME_INCLUDE_CONFIGURATIONS: "^runtimeClasspath$"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Submit the Gradle dependency graph
+        uses: gradle/actions/dependency-submission@v6
+
+  dependency-review:
+    name: dependency-review
+    if: always() && github.event_name == 'pull_request'
+    needs: dependency-submission
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Never a silent pass: without a submitted head snapshot the review
+      # cannot see Gradle changes, so a fork PR fails explicitly and is
+      # reviewed by hand (merged through the ruleset's admin bypass).
+      - name: Require a submitted head snapshot
+        if: needs.dependency-submission.result != 'success'
+        env:
+          RESULT: ${{ needs.dependency-submission.result }}
+        run: |
+          echo "::error::No dependency snapshot for this PR (dependency-submission: $RESULT). Fork PRs cannot submit one: the maintainer reviews dependency changes manually."
+          exit 1
+
+      - name: Review the PR's dependency changes
+        uses: actions/dependency-review-action@v5
+        with:
+          fail-on-severity: high
+          # MIT project: refuses strong-copyleft dependencies.
+          deny-licenses: "GPL-2.0-only, GPL-2.0-or-later, GPL-3.0-only, GPL-3.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later"
+          # Short retry for API propagation lag only: the snapshot is already
+          # submitted (needs: dependency-submission).
+          retry-on-snapshot-warnings: true
+          retry-on-snapshot-warnings-timeout: 120
