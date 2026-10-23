@@ -1,27 +1,82 @@
 name: Dependabot auto-merge
 
+# Auto-merge of Dependabot PRs (ADR-0003 §4): patch and minor everywhere
+# (Gradle — Quarkus, HAPI FHIR, jOOQ included — and Actions); majors stay under
+# human review. `gh pr merge --auto` waits for the required checks to be green
+# (`CI status`: tests + fixture goldens + runner-jar smoke; `dependency-review`;
+# `dco`; `commitlint`) and bypasses no branch rule.
+#
+# Update type: when fetch-metadata returns an empty `update-type` (e.g. a
+# security update whose commit message lacks the previous version), it is
+# derived from the "from X to Y" PR title by comparing the first two version
+# components; an unrecognised title → no auto-merge.
+# `--rebase`: the only merge method allowed on `main` (ADR-0002 §1).
+#
+# Token (ADR-0003 §4): auto-merge is enabled with the maintainer's fine-grained
+# PAT, stored as the *Dependabot* secret AUTO_MERGE_TOKEN (a workflow triggered
+# by Dependabot only sees Dependabot secrets, not Actions secrets). The merge is
+# then attributed to the maintainer: its push to `main` triggers release.yml
+# (release-please picks up the releasable `deps:` commit), dependency-review.yml
+# (fresh base snapshot) and ci.yml. With GITHUB_TOKEN, GitHub triggers no
+# workflow on that push. Missing secret: falls back to GITHUB_TOKEN with a
+# warning — the PR is still merged, but those workflows wait for the next push.
+#
+# `branches: [main]`: the PAT only acts on PRs targeting the branch covered by
+# the `main` ruleset and its required checks.
 on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   auto-merge:
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - name: Fetch Dependabot metadata
-        id: metadata
+      - name: Dependabot metadata
+        id: meta
         uses: dependabot/fetch-metadata@v3
-        with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Enable auto-merge for patch updates
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
+      - name: Update type
+        id: bump
         env:
+          META_UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          update_type="$META_UPDATE_TYPE"
+          [ "$update_type" = "null" ] && update_type=""
+          pattern=' from ([0-9][^ ]*) to ([0-9][^ ]*)( in .*)?$'
+          if [ -z "$update_type" ] && [[ "$PR_TITLE" =~ $pattern ]]; then
+            IFS=. read -r old_major old_minor _ <<< "${BASH_REMATCH[1]}"
+            IFS=. read -r new_major new_minor _ <<< "${BASH_REMATCH[2]}"
+            if [ "$old_major" != "$new_major" ]; then
+              update_type="version-update:semver-major"
+            elif [ "$old_minor" != "$new_minor" ]; then
+              update_type="version-update:semver-minor"
+            else
+              update_type="version-update:semver-patch"
+            fi
+            echo "update-type derived from the title: $update_type"
+          fi
+          echo "update-type=$update_type" >> "$GITHUB_OUTPUT"
+
+      - name: Enable auto-merge
+        if: >-
+          steps.bump.outputs.update-type == 'version-update:semver-patch' ||
+          steps.bump.outputs.update-type == 'version-update:semver-minor'
+        env:
+          AUTO_MERGE_TOKEN: ${{ secrets.AUTO_MERGE_TOKEN }}
+          GITHUB_TOKEN_FALLBACK: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr merge --auto --rebase "$PR_URL"
+        run: |
+          if [ -n "$AUTO_MERGE_TOKEN" ]; then
+            export GH_TOKEN="$AUTO_MERGE_TOKEN"
+          else
+            echo "::warning::Dependabot secret AUTO_MERGE_TOKEN missing — falling back to GITHUB_TOKEN; the merge will not trigger release.yml (ADR-0003 §4)."
+            export GH_TOKEN="$GITHUB_TOKEN_FALLBACK"
+          fi
+          gh pr merge --auto --rebase "$PR_URL"
