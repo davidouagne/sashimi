@@ -27,6 +27,22 @@ Rejected: a `typecheck` job mirroring the exporter's `mypy --strict`. Kotlin's c
 
 **Cost**: each job sets up Gradle on its own (`gradle/actions/setup-gradle`, cache written on `main` only); wall-clock time stays close to the former single job, billed minutes roughly triple. Accepted.
 
+**Audit** *(ticket [#76](https://github.com/davidouagne/sashimi/issues/76))*: dedicated workflow `.github/workflows/audit.yml` (weekly cron, Monday 06:00 UTC, + `workflow_dispatch`). Rather than a scanner, it reads the repository's **open Dependabot alerts** (`vulnerability-alerts: read`), raised on the dependency graph that `dependency-review.yml` submits on each push to `main` — the same GitHub Advisory data the PR gate uses. The job stays **green** as long as the alerts can be read; open alerts open a `dependencies` issue deduplicated by title (job `open-issue`, `issues: write` isolated). It only turns red if reading the alerts fails. A PR touching `audit.yml` runs the `audit` job (without opening an issue) so changes to it are tested before landing.
+
+Rejected audit tools: **osv-scanner** (needs a committed `gradle.lockfile`, i.e. adopting Gradle dependency locking; build plugins would stay uncovered since Dependabot does not refresh `buildscript-gradle.lockfile`) and **OWASP Dependency-Check** (NVD API key secret + data cache, slow first run, CPE-matching false positives). No advisory audit step in `ci.yml` (the exporter's `pip-audit (advisory)`): `dependency-review` covers PRs. Limitation: for Gradle, Dependabot can rarely open security-update PRs; an alert is fixed through the regular version updates or by hand.
+
+## 1bis. Dependency review (`.github/workflows/dependency-review.yml`)
+
+*(Ticket [#76](https://github.com/davidouagne/sashimi/issues/76); facts from the [Gradle dependency-security research](https://github.com/davidouagne/sashimi/blob/research/gradle-dependency-security/docs/research/gradle-dependency-security.md), [#73](https://github.com/davidouagne/sashimi/issues/73).)*
+
+GitHub's dependency graph does not parse Gradle builds, so `actions/dependency-review-action` sees nothing unless the graph is submitted. The workflow ("Dependency review") runs on `pull_request` and on `push: main`:
+
+- Job `dependency-submission` (`contents: write`): `gradle/actions/dependency-submission@v6`. On `main` it gives the base snapshot (also feeding Dependabot alerts and the audit), on a PR the head snapshot.
+- Job `dependency-review` (PR only, `contents: read`, `needs: dependency-submission`): `fail-on-severity: high`, licence deny-list GPL-2.0/3.0 + AGPL-3.0 (all variants; sashimi is MIT), a short `retry-on-snapshot-warnings` for API lag only. The job name is the required context of the `main` ruleset, identical to the exporter's.
+- **No silent pass**: when its retry times out, the review action proceeds with whatever it has, so the review only starts after a successful submission (`needs:`).
+- **Scope**: submitted Gradle dependencies carry no scope by default. `DEPENDENCY_GRAPH_RUNTIME_INCLUDE_CONFIGURATIONS: ^runtimeClasspath$` marks only what ships in the runner jar as `runtime`; tests and build tooling become `development`, ignored by the default `fail-on-scopes: runtime`. Rejected: `fail-on-scopes: runtime, unknown` without scoping, which would gate on test and lint tooling too.
+- **Fork PRs** get a read-only token and cannot submit: `dependency-review` then **fails explicitly** and the maintainer reviews dependency changes by hand, merging through the ruleset's admin bypass. Rejected: the documented two-workflow split (`workflow_run`), whose longer wait reintroduces the timeout silent pass; and skipping, which is a silent pass.
+
 ## 2. Versioning and changelog: release-please
 
 *(Ticket [#75](https://github.com/davidouagne/sashimi/issues/75); facts from the [release-please research](https://github.com/davidouagne/sashimi/blob/research/release-please-gradle/docs/research/release-please-gradle.md), [#74](https://github.com/davidouagne/sashimi/issues/74).)*
