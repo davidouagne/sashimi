@@ -1,0 +1,54 @@
+name: Commit policy
+
+# ADR-0002: every commit of a PR is a DCO-signed Conventional Commit.
+# Rebase merge: these commits land as-is on `main`; the PR title never enters
+# the history and is therefore not checked.
+# Bounded to BASE..HEAD → not retroactive.
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: commit-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  dco:
+    name: dco
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check every commit carries a Signed-off-by trailer
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          rc=0
+          for sha in $(git rev-list --no-merges "$BASE_SHA..$HEAD_SHA"); do
+            if ! git show -s --format=%B "$sha" | grep -qE '^Signed-off-by: .+ <.+>$'; then
+              echo "::error::$sha: missing 'Signed-off-by:' trailer — use git commit -s (see CONTRIBUTING.md)"
+              rc=1
+            fi
+          done
+          exit $rc
+
+  commitlint:
+    name: commitlint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: commitlint.config.mjs
