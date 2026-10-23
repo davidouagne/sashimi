@@ -18,7 +18,7 @@ updates:
     # others; the first matching group wins, the catch-all comes last. Majors
     # are left out of every group: they arrive as individual PRs, reviewed by
     # a human (ADR-0003 §4). Gradle has no dev/prod dependency-type, hence
-    # name patterns rather than the exporter's dependency-type groups.
+    # name patterns.
     groups:
       quarkus:
         patterns: ["io.quarkus*"]

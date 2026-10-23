@@ -4,10 +4,9 @@ name: Audit dependencies
 # week, reads the open Dependabot alerts raised on the dependency graph that
 # `dependency-review.yml` submits on each push to `main`. ADR-0003 §1.
 #
-# Design (as the exporter's pip-audit audit): the `audit` job stays GREEN as
-# long as the alerts can be read — a known vulnerability is a finding, not a CI
-# failure, and is reported through a `dependencies` issue. The job only turns
-# red if reading the alerts fails.
+# Design: the `audit` job stays GREEN as long as the alerts can be read — a
+# known vulnerability is a finding, not a CI failure, and is reported through a
+# `dependencies` issue. The job only turns red if reading the alerts fails.
 #
 # On a PR touching this workflow, only `audit` runs (to test it); no issue is
 # opened.
