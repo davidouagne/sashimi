@@ -81,8 +81,11 @@ jobs:
             exit 1
           }
 
+      # Bare file names, so that `sha256sum -c checksums.txt` works next to the
+      # downloaded jar.
       - name: Generate checksums
-        run: sha256sum build/*-runner.jar > build/checksums.txt
+        working-directory: build
+        run: sha256sum *-runner.jar > checksums.txt
 
       - name: Attach the artifacts to the GitHub Release
         env:
@@ -116,7 +119,7 @@ jobs:
         run: |
           mkdir dl
           gh release download "$TAG" --dir dl --repo "$GITHUB_REPOSITORY"
-          (cd dl && sha256sum -c --ignore-missing <(sed 's#build/##' checksums.txt))
+          (cd dl && sha256sum -c checksums.txt)
 
       - name: Smoke CLI (--version + --help)
         run: |
