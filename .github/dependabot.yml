@@ -5,9 +5,10 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # `deps`: visible in the changelog and releasable — the uber-jar bundles
+    # its dependencies, so a bump only reaches users through a release (ADR-0002 §2).
     commit-message:
-      prefix: "build"
-      include: "scope"
+      prefix: "deps"
     groups:
       gradle-minor-patch:
         update-types:

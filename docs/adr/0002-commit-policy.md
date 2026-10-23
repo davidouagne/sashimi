@@ -19,9 +19,11 @@ The Dependabot auto-merge workflow uses `gh pr merge --auto --rebase` accordingl
 
 Since every merged commit feeds the changelog, **every commit** of a PR must be a valid Conventional Commit, checked in CI by `commitlint` (`wagoid/commitlint-github-action`, config `commitlint.config.mjs`) on `git rev-list --no-merges BASE..HEAD`. The PR title is not checked: it never enters the history.
 
-Config, identical to the exporter's: `type-enum = [feat, fix, test, docs, chore, build]`, `header-max-length: 72`, `subject-full-stop: never`, `type-empty` / `subject-empty: never`, free scopes, no `subject-case`, no body/footer line-length limit (Dependabot bodies exceed it).
+Config, identical to the exporter's except for `deps` (below): `type-enum = [feat, fix, test, docs, chore, build, deps]`, `header-max-length: 72`, `subject-full-stop: never`, `type-empty` / `subject-empty: never`, free scopes, no `subject-case`, no body/footer line-length limit (Dependabot bodies exceed it).
 
-The type list is deliberately **not** extended with `ci`, `refactor`, `perf` or `revert`, although sashimi's earlier history used `ci:` and `security:`: an identical config is the point of the alignment, and under release-please's `java` strategy those extra types would mostly be hidden changelog noise. CI changes are `build:` or `chore:`, security fixes are `fix:`, refactors are `chore:`. Consequence: only `feat`, `fix` and `docs` can trigger a release.
+The type list is deliberately **not** extended with `ci`, `refactor`, `perf` or `revert`, although sashimi's earlier history used `ci:` and `security:`: an identical config is the point of the alignment, and under release-please's `java` strategy those extra types would mostly be hidden changelog noise. CI changes are `build:` or `chore:`, security fixes are `fix:`, refactors are `chore:`.
+
+**`deps` — a deliberate divergence from the exporter** *(added by [#75](https://github.com/davidouagne/sashimi/issues/75))*: sashimi ships an **uber-jar** that bundles its dependencies, so a dependency fix (security or otherwise) only reaches users through a new release — unlike the exporter's Python package, whose dependencies are resolved at install time. `deps` is visible in the changelog and releasable under release-please; Dependabot's `gradle` updates use it. Consequence: only `feat`, `fix` and `deps` trigger a release (`docs` is hidden, ADR-0003 §2).
 
 ## 3. DCO signoff
 
@@ -31,7 +33,7 @@ Rejected alternative: requiring **GPG/S-MIME commit signatures** — high fricti
 
 ## 4. Robots
 
-- **Dependabot**: its commits already carry `Signed-off-by: dependabot[bot]`; its `commit-message.prefix` is `build` (in the `type-enum`), producing `build(deps): …`.
+- **Dependabot**: its commits already carry `Signed-off-by: dependabot[bot]`; its `commit-message.prefix` is `deps` for the `gradle` ecosystem (`deps: bump …`, releasable) and `build` for `github-actions` (`build(deps): …`, hidden), both in the `type-enum`.
 - **release-please**: its `signoff` config option adds the trailer to its `chore(main): release …` commit.
 
 No `if:` bypass: humans and robots go through the same two checks (`dco`, `commitlint`).

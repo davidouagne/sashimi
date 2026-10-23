@@ -4,7 +4,9 @@
 export default {
   extends: ['@commitlint/config-conventional'],
   rules: {
-    'type-enum': [2, 'always', ['feat', 'fix', 'test', 'docs', 'chore', 'build']],
+    // `deps` on top of the exporter's list: the uber-jar bundles its
+    // dependencies, so a dependency bump is user-facing (ADR-0002 §2).
+    'type-enum': [2, 'always', ['feat', 'fix', 'test', 'docs', 'chore', 'build', 'deps']],
     'type-empty': [2, 'never'],
     'subject-empty': [2, 'never'],
     'subject-full-stop': [2, 'never', '.'],
