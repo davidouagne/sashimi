@@ -1,19 +1,64 @@
 name: Release
 
+# Mono-workflow (ADR-0003). No PAT nor GitHub App: the tag and Release that
+# release-please creates with GITHUB_TOKEN trigger no workflow, so build and
+# smoke are jobs of THIS workflow, gated on `release_created == 'true'` and
+# running in the push/main context.
+#
+# `workflow_dispatch` (input `publish_tag`): catch-up when the automatic run of
+# a release failed AFTER the tag was created (job `build` red or skipped).
+# Replays build → smoke on an existing tag.
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish_tag:
+        description: "Existing tag (e.g. v1.0.1) to (re)build and attach to its GitHub Release."
+        type: string
+        required: true
 
-permissions:
-  contents: write
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  release:
+  release-please:
+    # On a catch-up dispatch, release-please has nothing to do.
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          # signoff: set in release-please-config.json (the action has no such
+          # input) — the bot's chore(main): release … commit passes `dco` (ADR-0002).
+
+  build:
+    needs: release-please
+    # Tagged release on push, OR manual catch-up on an existing tag.
+    if: ${{ always() && (needs.release-please.outputs.release_created == 'true' || inputs.publish_tag) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # gh release upload
+    env:
+      TAG: ${{ inputs.publish_tag || needs.release-please.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.publish_tag || needs.release-please.outputs.tag_name }}
+          persist-credentials: false
 
       - name: Set up JDK 21
         uses: actions/setup-java@v6
@@ -24,25 +69,64 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Derive version from tag
-        id: version
-        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      # The version comes from gradle.properties at the tag (bumped by release-please).
+      - name: Build the runner jar
+        run: ./gradlew quarkusBuild --console=plain
 
-      - name: Make gradlew executable
-        run: chmod +x gradlew
-
-      - name: Build
-        run: ./gradlew build -PreleaseVersion=${{ steps.version.outputs.value }} --console=plain
+      - name: Check the jar version matches the tag
+        run: |
+          jar=$(ls build/*-runner.jar)
+          test "$jar" = "build/sashimi-${TAG#v}-runner.jar" || {
+            echo "::error::$jar does not match tag $TAG"
+            exit 1
+          }
 
       - name: Generate checksums
         run: sha256sum build/*-runner.jar > build/checksums.txt
 
-      - name: Create GitHub Release
+      - name: Attach the artifacts to the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" build/*-runner.jar build/checksums.txt --clobber --repo "$GITHUB_REPOSITORY"
+
+  smoke:
+    needs: [release-please, build]
+    if: ${{ always() && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true # advisory: the release is already published
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ inputs.publish_tag || needs.release-please.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.publish_tag || needs.release-please.outputs.tag_name }}
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Download the released jar and verify its checksum
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            build/*-runner.jar \
-            build/checksums.txt \
-            --title "${{ github.ref_name }}" \
-            --generate-notes
+          mkdir dl
+          gh release download "$TAG" --dir dl --repo "$GITHUB_REPOSITORY"
+          (cd dl && sha256sum -c --ignore-missing <(sed 's#build/##' checksums.txt))
+
+      - name: Smoke CLI (--version + --help)
+        run: |
+          java -jar dl/*-runner.jar --version | grep -Fx "${TAG#v}"
+          java -jar dl/*-runner.jar --help
+
+      - name: Smoke transcription (one fixture DDL)
+        run: |
+          out=$(mktemp -d)
+          java -jar dl/*-runner.jar transcribe \
+            -i src/test/resources/fixtures/encounter/input.sql \
+            -o "$out"
+          test -s "$(ls "$out"/*.fsh | head -1)"
