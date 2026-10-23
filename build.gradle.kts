@@ -24,7 +24,7 @@ dependencies {
     implementation("io.quarkus:quarkus-kotlin")
     implementation("io.quarkus:quarkus-picocli")
     implementation("io.quarkus:quarkus-arc")
-    implementation("org.apache.logging.log4j:log4j-core:2.14.1")
+    testImplementation("org.apache.logging.log4j:log4j-core:2.14.1")
 
     // Logging
     implementation("org.slf4j:slf4j-api:2.0.20")
