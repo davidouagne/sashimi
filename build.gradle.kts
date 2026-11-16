@@ -14,7 +14,7 @@ repositories {
     mavenCentral()
 }
 
-val quarkusVersion = "3.40.1.1"
+val quarkusVersion = "3.40.1.2"
 val hapiVersion = "8.12.1"
 val jooqVersion = "3.21.9"
 
