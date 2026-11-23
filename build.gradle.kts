@@ -43,9 +43,12 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-// GHSA-xxph-c9ww-hj94 (high): the Quarkus BOM pins Guava 33.6.0-jre, fixed in
-// 33.7.2-jre. Drop once the BOM ships a patched Guava.
-val guavaVersion = "33.7.2-jre"
+// GHSA-xxph-c9ww-hj94 (high): the enforced Quarkus BOM 3.40.x pins Guava
+// 33.6.0-jre (fixed in 33.7.2-jre). Its constraint is forced, so this rule can
+// only pin, never set a floor: keep it at least as high as what other
+// dependencies ask for (HAPI 9 asks for 33.8.0-jre), or it downgrades them.
+// Drop once the platform moves to a BOM with a patched Guava (4.0.x ships 33.7.2+).
+val guavaVersion = "33.8.0-jre"
 configurations.configureEach {
     resolutionStrategy.eachDependency {
         if (requested.group == "com.google.guava" && requested.name == "guava") {
