@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.3](https://github.com/davidouagne/sashimi/compare/v1.0.2...v1.0.3) (2026-11-23)
+
+
+### Dependencies
+
+* Bump gradle-wrapper ([b200e79](https://github.com/davidouagne/sashimi/commit/b200e7945b3b844f69e211b5abcf8ea4a920b5fb))
+* Bump hapiVersion from 8.12.1 to 9.0.0 ([7e28eb1](https://github.com/davidouagne/sashimi/commit/7e28eb115ef9e325d1c30ea4227046ff18e809a2))
+* Bump io.quarkus from 3.40.1.2 to 4.0.0 ([bd5dbe9](https://github.com/davidouagne/sashimi/commit/bd5dbe9c9207a8f77398c2c51f39a9ee54a391fd))
+* Bump org.jooq:jooq from 3.21.9 to 3.21.10 in the jooq group ([1ba584d](https://github.com/davidouagne/sashimi/commit/1ba584dae43736c9dd5e1edcc6d27ba848d4327e))
+* force Guava 33.7.2-jre for GHSA-xxph-c9ww-hj94 ([28f89fa](https://github.com/davidouagne/sashimi/commit/28f89fa3618f094545a36db9f22612045133f827))
+* raise Guava pin to 33.8.0-jre to stop downgrading HAPI 9 ([83700d3](https://github.com/davidouagne/sashimi/commit/83700d35fb1d31a57ffe05503c7754832f9635e3))
+
 ## [1.0.2](https://github.com/davidouagne/sashimi/compare/v1.0.1...v1.0.2) (2026-11-16)
 
 
