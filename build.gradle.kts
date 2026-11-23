@@ -43,6 +43,18 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
+// GHSA-xxph-c9ww-hj94 (high): the Quarkus BOM pins Guava 33.6.0-jre, fixed in
+// 33.7.2-jre. Drop once the BOM ships a patched Guava.
+val guavaVersion = "33.7.2-jre"
+configurations.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "com.google.guava" && requested.name == "guava") {
+            useVersion(guavaVersion)
+            because("GHSA-xxph-c9ww-hj94: Guava <= 33.7.1 is vulnerable")
+        }
+    }
+}
+
 kotlin {
     jvmToolchain(21)
 }
