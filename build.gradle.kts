@@ -15,7 +15,7 @@ repositories {
 }
 
 val quarkusVersion = "3.40.1.2"
-val hapiVersion = "8.12.1"
+val hapiVersion = "9.0.0"
 val jooqVersion = "3.21.10"
 
 dependencies {
